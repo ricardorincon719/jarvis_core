@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>JARVIS-CARAGUÁ | Neural Interface</title>
+    <style>
+        :root {
+            --bg-dark: #0a0c12;
+            --bg-darker: #05070c;
+            --accent-cyan: #00d4ff;
+            --accent-gold: #ffd966;
+            --accent-red: #ff4444;
+            --text-dim: #8892b0;
+            --text-bright: #e0f7fa;
+            --glow-cyan: 0 0 10px rgba(0, 212, 255, 0.5);
+            --glow-gold: 0 0 10px rgba(255, 217, 102, 0.5);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            cursor: none;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-darker) 100%);
+            color: var(--text-bright);
+            font-family: 'Courier New', 'SF Mono', 'Fira Code', monospace;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Cursor personalizado */
+        .cursor {
+            position: fixed;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--accent-cyan);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 9999;
+            transition: all 0.1s ease;
+            transform: translate(-50%, -50%);
+            box-shadow: var(--glow-cyan);
+        }
+
+        .cursor-dot {
+            position: fixed;
+            width: 4px;
+            height: 4px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 9999;
+            transform: translate(-50%, -50%);
+            transition: 0.05s ease;
+        }
+
+        .cursor.hover {
+            width: 40px;
+            height: 40px;
+            border-color: var(--accent-gold);
+            box-shadow: var(--glow-gold);
+            background: rgba(255, 217, 102, 0.1);
+        }
+
+        /* Pantalla de Autenticación */
+        .auth-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 7, 12, 0.98);
+            backdrop-filter: blur(12px);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .auth-overlay.hidden {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .auth-container {
+            background: rgba(0, 212, 255, 0.03);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 20px;
+            padding: 50px 40px;
+            width: 90%;
+            max-width: 450px;
+            text-align: center;
+            box-shadow: var(--glow-cyan);
+            animation: fadeInUp 0.5s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .auth-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, transparent 50%, rgba(0,212,255,0.05) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            animation: scan 12s linear infinite;
+        }
+
+        @keyframes scan {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .auth-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            animation: pulseGlow 2s infinite;
+        }
+
+        .auth-title {
+            font-size: 1.5rem;
+            letter-spacing: 3px;
+            margin-bottom: 10px;
+            color: var(--accent-cyan);
+            text-shadow: var(--glow-cyan);
+        }
+
+        .auth-subtitle {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-bottom: 30px;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 15px;
+            background: transparent;
+            border: 1px solid var(--accent-cyan);
+            color: var(--text-bright);
+            font-size: 1.5rem;
+            text-align: center;
+            letter-spacing: 8px;
+            margin-bottom: 25px;
+            outline: none;
+            font-family: monospace;
+        }
+
+        .auth-input:focus {
+            box-shadow: var(--glow-cyan);
+        }
+
+        .auth-btn {
+            background: var(--accent-cyan);
+            color: black;
+            border: none;
+            padding: 12px 30px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.3s;
+            width: 100%;
+            font-size: 1rem;
+        }
+
+        .auth-btn:hover {
+            box-shadow: var(--glow-cyan);
+            background: #fff;
+        }
+
+        .auth-error {
+            color: var(--accent-red);
+            margin-top: 20px;
+            font-size: 0.8rem;
+            display: none;
+            text-shadow: 0 0 5px rgba(255,68,68,0.5);
+        }
+
+        .auth-success {
+            color: var(--accent-gold);
+            margin-top: 20px;
+            display: none;
+        }
+
+        /* Interfaz Principal */
+        .main-interface {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            opacity: 0;
+            transition: opacity 1s ease;
+        }
+
+        .main-interface.active {
+            opacity: 1;
+        }
+
+        header {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid var(--accent-cyan);
+            letter-spacing: 2px;
+            position: relative;
+        }
+
+        header::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 20px;
+            background: rgba(0, 0, 0, 0.5);
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            border-bottom: 1px solid rgba(0, 212, 255, 0.3);
+        }
+
+        .status-online {
+            color: #00ff88;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; text-shadow: 0 0 5px #00ff88; }
+        }
+
+        @keyframes pulseGlow {
+            0%, 100% { text-shadow: 0 0 5px var(--accent-cyan); }
+            50% { text-shadow: 0 0 20px var(--accent-cyan); }
+        }
+
+        #chat-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: slideIn 0.2s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .user-msg {
+            text-align: right;
+        }
+
+        .user-msg .msg-bubble {
+            background: rgba(255, 255, 255, 0.08);
+            border-left: 3px solid var(--accent-gold);
+            display: inline-block;
+            padding: 10px 18px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+
+        .jarvis-msg .msg-bubble {
+            background: rgba(0, 212, 255, 0.03);
+            border-left: 3px solid var(--accent-cyan);
+            display: inline-block;
+            padding: 10px 18px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+
+        .brain-tag {
+            font-size: 0.65rem;
+            color: var(--accent-cyan);
+            display: block;
+            margin-bottom: 6px;
+            letter-spacing: 1px;
+        }
+
+        .brain-tag.critico {
+            color: var(--accent-gold);
+        }
+
+        #input-area {
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            gap: 12px;
+            border-top: 1px solid var(--accent-cyan);
+        }
+
+        #input-area input {
+            flex: 1;
+            background: transparent;
+            border: 1px solid var(--accent-cyan);
+            color: var(--text-bright);
+            padding: 14px;
+            outline: none;
+            font-family: monospace;
+            transition: 0.2s;
+        }
+
+        #input-area input:focus {
+            box-shadow: var(--glow-cyan);
+        }
+
+        #input-area button {
+            background: var(--accent-cyan);
+            color: black;
+            border: none;
+            padding: 0 24px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+
+        #input-area button:hover {
+            box-shadow: var(--glow-cyan);
+            background: #fff;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 15px;
+            color: var(--accent-cyan);
+            font-style: italic;
+        }
+
+        .loading.active {
+            display: block;
+            animation: pulse 1s infinite;
+        }
+
+        #chat-container::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        #chat-container::-webkit-scrollbar-track {
+            background: #1a1a2e;
+        }
+
+        #chat-container::-webkit-scrollbar-thumb {
+            background: var(--accent-cyan);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="cursor" id="cursor"></div>
+<div class="cursor-dot" id="cursor-dot"></div>
+
+<audio id="audioGranted" preload="auto">
+    <source src="/static/audio/acceso_ok.mp3" type="audio/mpeg">
+</audio>
+<audio id="audioDenied" preload="auto">
+    <source src="/static/audio/acceso_denegado.mp3" type="audio/mpeg">
+</audio>
+<audio id="audioWelcome" preload="auto">
+    <source src="/static/audio/bienvenida.mp3" type="audio/mpeg">
+</audio>
+
+<div class="auth-overlay" id="authOverlay">
+    <div class="auth-container">
+        <div class="auth-icon">🔷</div>
+        <div class="auth-title">JARVIS - CARAGUÁ</div>
+        <div class="auth-subtitle">SISTEMA DE SEGURIDAD</div>
+        <input type="password" class="auth-input" id="pinInput" placeholder="••••" maxlength="4" autofocus>
+        <button class="auth-btn" onclick="authenticate()">VALIDAR ACCESO</button>
+        <div class="auth-error" id="authError">🔒 ACCESO DENEGADO</div>
+        <div class="auth-success" id="authSuccess">✅ ACCESO CONCEDIDO</div>
+    </div>
+</div>
+
+<div class="main-interface" id="mainInterface">
+    <header>🔷 J.A.R.V.I.S. - CARAGUÁ v2.0 | NEURAL INTERFACE 🔷</header>
+    <div class="status-bar">
+        <span>🖥️ CORE: <span id="brainStatus" class="status-online">ACTIVO</span></span>
+        <span>📡 PLUGINS: <span id="pluginStatus">--</span></span>
+        <span>⚡ ENERGÍA: <span id="batteryStatus">--%</span></span>
+    </div>
+
+    <div id="chat-container">
+        <div class="message jarvis-msg">
+            <div class="msg-bubble">
+                <span class="brain-tag">⚡ SISTEMA ⚡</span>
+                Señor, todos los sistemas están operativos. ¿Cómo puedo asistirle?
+            </div>
+        </div>
+    </div>
+
+    <div class="loading" id="loader">⚙️ PROCESANDO CONSULTA... ⚙️</div>
+
+    <div id="input-area">
+        <input type="text" id="userInput" placeholder="Ingrese comando..." onkeypress="handleKey(event)">
+        <button onclick="sendMessage()">▶ EJECUTAR</button>
+        <button onclick="clearChat()">🗑️ LIMPIAR</button>
+    </div>
+</div>
+
+<script>
+    const TOKEN = 'Bearer jarvis_local_123';
+
+    const cursor = document.getElementById('cursor');
+    const cursorDot = document.getElementById('cursor-dot');
+
+    document.addEventListener('mousemove', (e) => {
+        cursor.style.left = e.clientX + 'px';
+        cursor.style.top = e.clientY + 'px';
+        cursorDot.style.left = e.clientX + 'px';
+        cursorDot.style.top = e.clientY + 'px';
+    });
+
+    const interactiveElements = ['button', 'input', '.auth-btn'];
+    document.querySelectorAll(interactiveElements.join(',')).forEach(el => {
+        el.addEventListener('mouseenter', () => cursor.classList.add('hover'));
+        el.addEventListener('mouseleave', () => cursor.classList.remove('hover'));
+    });
+
+    function playAudio(id) {
+        const audio = document.getElementById(id);
+        if (audio) audio.play().catch(e => console.log('Audio:', e));
+    }
+
+    let isAuthenticated = false;
+
+    async function authenticate() {
+        const pin = document.getElementById('pinInput').value;
+        const authError = document.getElementById('authError');
+        const authSuccess = document.getElementById('authSuccess');
+        const authOverlay = document.getElementById('authOverlay');
+        const mainInterface = document.getElementById('mainInterface');
+
+        if (!pin || pin.length < 4) {
+            authError.style.display = 'block';
+            playAudio('audioDenied');
+            return;
+        }
+
+        try {
+            const response = await fetch('/ask_auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json',
+                           'Authorization': 'Bearer jarvis_local_123'
+                },
+                body: JSON.stringify({ pin: pin })
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                authSuccess.style.display = 'block';
+                authError.style.display = 'none';
+                playAudio('audioGranted');
+                isAuthenticated = true;
+
+                setTimeout(() => {
+                    authOverlay.classList.add('hidden');
+                    mainInterface.classList.add('active');
+                    loadPluginsStatus();
+                    loadBatteryStatus();
+                    playAudio('audioWelcome');
+                }, 800);
+            } else {
+                authError.style.display = 'block';
+                playAudio('audioDenied');
+                document.getElementById('pinInput').value = '';
+            }
+        } catch (err) {
+            authError.style.display = 'block';
+            document.getElementById('pinInput').value = '';
+        }
+    }
+
+    async function loadPluginsStatus() {
+        try {
+            const res = await fetch('/plugins', {
+                headers: {
+                    'Authorization': TOKEN
+                }
+            });
+            const data = await res.json();
+            document.getElementById('pluginStatus').innerText = data.total;
+        } catch(e) {
+            document.getElementById('pluginStatus').innerText = '?';
+        }
+    }
+
+    async function loadBatteryStatus() {
+        try {
+            const res = await fetch('/battery', {
+                headers: {
+                    'Authorization': TOKEN
+                }
+            });
+            const data = await res.json();
+            document.getElementById('batteryStatus').innerText = `${data.percentage}%`;
+        } catch(e) {
+            document.getElementById('batteryStatus').innerText = '--%';
+        }
+    }
+
+    const chatContainer = document.getElementById('chat-container');
+    const userInput = document.getElementById('userInput');
+    const loader = document.getElementById('loader');
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return text.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function addUserMessage(text) {
+        chatContainer.innerHTML += `
+            <div class="message user-msg">
+                <div class="msg-bubble">💬 ${escapeHtml(text)}</div>
+            </div>
+        `;
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    function addBotMessage(text, brain, plugin) {
+        const isCritico = brain === 'critical' || (brain && brain.includes('Crítico'));
+        const tagClass = isCritico ? 'brain-tag critico' : 'brain-tag';
+        const icon = isCritico ? '🖥️' : '📱';
+        const displayBrain = brain || plugin || 'JARVIS';
+        
+        chatContainer.innerHTML += `
+            <div class="message jarvis-msg">
+                <div class="msg-bubble">
+                    <span class="${tagClass}">${icon} ${escapeHtml(displayBrain)}</span>
+                    ${escapeHtml(text)}
+                </div>
+            </div>
+        `;
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+    }
+
+    async function sendMessage() {
+        if (!isAuthenticated) return;
+
+        const text = userInput.value.trim();
+        if (!text) return;
+
+        addUserMessage(text);
+        userInput.value = '';
+        loader.classList.add('active');
+
+        try {
+            const response = await fetch('/ask', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json',
+                           'Authorization': 'Bearer jarvis_local_123'
+                },
+                body: JSON.stringify({ pregunta: text })
+            });
+            const data = await response.json();
+            addBotMessage(data.respuesta || data.response, data.cerebro, data.plugin);
+        } catch (error) {
+            addBotMessage(`Error de comunicación: ${error.message}`, 'SISTEMA');
+        } finally {
+            loader.classList.remove('active');
+        }
+    }
+
+    function clearChat() {
+        chatContainer.innerHTML = `
+            <div class="message jarvis-msg">
+                <div class="msg-bubble">
+                    <span class="brain-tag">⚡ SISTEMA ⚡</span>
+                    Señor, interfaz reiniciada. Listo para nuevas órdenes.
+                </div>
+            </div>
+        `;
+    }
+
+    function handleKey(e) {
+        if (e.key === 'Enter') sendMessage();
+    }
+
+    document.getElementById('pinInput')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') authenticate();
+    });
+
+    setInterval(() => {
+        if (isAuthenticated) loadBatteryStatus();
+    }, 30000);
+</script>
+</body>
+</html>
