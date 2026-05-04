@@ -8,21 +8,60 @@ import json
 import importlib
 import hashlib
 import ipaddress
+import os
 import socket
 from pathlib import Path
 from router import route_query, update_context
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 
-SECRET_TOKEN = "jarvis_local_123"
-
 app = Flask(__name__)
 CORS(app)
 
 # ========== CONFIGURACIÓN ==========
-BRANCHES_DIR = Path("branches")
-MANIFEST_FILE = Path("plugin_manifest.json")
+BASE_DIR = Path(__file__).resolve().parent
+
+
+def load_env_file(path: Path = BASE_DIR / ".env"):
+    """Carga .env simple sin agregar dependencia externa."""
+    if not path.exists():
+        return
+
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_env_file()
+
+SECRET_TOKEN = os.getenv("JARVIS_SECRET_TOKEN", "jarvis_local_123")
+CORE_HOST = os.getenv("JARVIS_CORE_HOST", "0.0.0.0")
+CORE_PORT = int(os.getenv("JARVIS_CORE_PORT", "5004"))
+CORE_DEBUG = os.getenv("JARVIS_CORE_DEBUG", "false").lower() in {"1", "true", "yes"}
+CORE_DEV_MODE = os.getenv("JARVIS_CORE_DEV_MODE", "false").lower() in {"1", "true", "yes"}
+BRANCHES_DIR = Path(os.getenv("JARVIS_BRANCHES_DIR", str(BASE_DIR / "branches")))
+MANIFEST_FILE = Path(os.getenv("JARVIS_MANIFEST_FILE", str(BASE_DIR / "plugin_manifest.json")))
 plugins = {}
+plugin_errors = {}
+
+
+def running_in_termux() -> bool:
+    return Path("/data/data/com.termux/files/home").exists()
+
+
+def guard_core_execution():
+    """Evita arrancar el core móvil como servicio accidental en laptop."""
+    if running_in_termux() or CORE_DEV_MODE:
+        return
+
+    print("JARVIS CORE no se arrancó.")
+    print("Este repo es la copia del core móvil. En laptop úsalo para revisar, editar y probar.")
+    print("Para prueba explícita: JARVIS_CORE_DEV_MODE=true .venv/bin/python core.py")
+    raise SystemExit(2)
 
 
 # ========== SEGURIDAD ==========
@@ -104,6 +143,7 @@ def verify_plugin_integrity(plugin_path: Path) -> bool:
 def load_plugins():
     """Escanea branches/ y carga todos los plugins."""
     plugins.clear()
+    plugin_errors.clear()
 
     if not BRANCHES_DIR.exists():
         BRANCHES_DIR.mkdir(parents=True)
@@ -123,6 +163,7 @@ def load_plugins():
         try:
             if not verify_plugin_integrity(plugin_path):
                 print(f"   ❌ {branch_name.name}: integridad fallida, omitido")
+                plugin_errors[branch_name.name] = "integridad fallida"
                 continue
 
             module = importlib.import_module(f"branches.{branch_name.name}.current.plugin")
@@ -137,9 +178,11 @@ def load_plugins():
                 print(f"   ✅ {branch_name.name} {plugins[branch_name.name]['version']}")
             else:
                 print(f"   ⚠️ {branch_name.name}: falta función handle()")
+                plugin_errors[branch_name.name] = "falta función handle()"
 
         except Exception as e:
             print(f"   ❌ {branch_name.name}: error al cargar - {e}")
+            plugin_errors[branch_name.name] = str(e)
 
     print(f"\n📊 Total plugins cargados: {len(plugins)}")
 
@@ -148,7 +191,7 @@ def load_plugins():
 @app.route("/")
 def index():
     """Página principal."""
-    return render_template("index.html")
+    return render_template("index.html", secret_token=SECRET_TOKEN)
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -275,6 +318,7 @@ def health():
         "status": "online",
         "plugins": len(plugins),
         "versions": {name: info["version"] for name, info in plugins.items()},
+        "plugin_errors": plugin_errors,
     })
 
 @app.route("/network", methods=["GET"])
@@ -282,10 +326,10 @@ def network():
     """Devuelve la IP LAN actual y URLs útiles para la UI."""
     lan_ip = get_current_lan_ip()
     return jsonify({
-        "localhost": "http://127.0.0.1:5004",
+        "localhost": f"http://127.0.0.1:{CORE_PORT}",
         "lan_ip": lan_ip,
-        "lan_url": f"http://{lan_ip}:5004",
-        "port": 5004
+        "lan_url": f"http://{lan_ip}:{CORE_PORT}",
+        "port": CORE_PORT
     })
 
 @app.route("/battery", methods=["GET"])
@@ -319,8 +363,9 @@ def battery():
 
 
 if __name__ == "__main__":
+    guard_core_execution()
     load_plugins()
     print("\n🚀 JARVIS CORE iniciado")
-    print("   🌐 http://localhost:5004")
+    print(f"   🌐 http://localhost:{CORE_PORT}")
     print(f"   📦 Plugins activos: {len(plugins)}\n")
-    app.run(host="0.0.0.0", port=5004, debug=False)
+    app.run(host=CORE_HOST, port=CORE_PORT, debug=CORE_DEBUG)

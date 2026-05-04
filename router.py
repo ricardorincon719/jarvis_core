@@ -369,6 +369,11 @@ def route_query(text: str, available_plugins: List[str]) -> str:
         if "music" in scores:
             scores["music"] += 6
 
+    # Si pide analisis/estrategia, prioriza delegacion pesada sobre estado de hardware.
+    if any(x in text for x in ["analiza", "evalua", "investiga", "optimiza", "estrategia", "plan", "proyecto", "compara", "recomienda"]):
+        if "critical" in scores:
+            scores["critical"] += 20
+
     # Si explicita dispositivo remoto
     if any(x in text for x in ["laptop", "pc", "computadora", "notebook", "nodo"]):
         if "music" in scores:

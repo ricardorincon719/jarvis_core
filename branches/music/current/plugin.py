@@ -9,9 +9,10 @@ TRIGGERS = [
 ]
 
 import requests
+import os
 
-LAPTOP_HOST = "jarvis-node.local"
-PORT = 5005
+LAPTOP_HOST = os.getenv("JARVIS_MUSIC_HOST", "jarvis-node.local")
+PORT = int(os.getenv("JARVIS_MUSIC_PORT", "5005"))
 
 def can_handle(pregunta):
     p = pregunta.lower()

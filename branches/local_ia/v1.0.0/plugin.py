@@ -2,11 +2,14 @@
 Plugin LOCAL_IA - IA local real con qwen2.5:0.5b
 """
 
+import os
 import requests
 
 NAME = "local_ia"
 VERSION = "v1.0.0"
-DESCRIPTION = "IA local rápida (qwen2.5:0.5b)"
+OLLAMA_URL = os.getenv("JARVIS_OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("JARVIS_OLLAMA_MODEL", "qwen2.5:0.5b")
+DESCRIPTION = f"IA local rápida ({OLLAMA_MODEL})"
 TRIGGERS = ["hola", "gracias", "chau", "como", "qué", "cuándo", "dónde", "por qué"]
 
 def can_handle(prompt):
@@ -15,8 +18,8 @@ def can_handle(prompt):
 def handle(prompt):
     try:
         response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={"model": "qwen2.5:0.5b", "prompt": prompt, "stream": False},
+            f"{OLLAMA_URL}/api/generate",
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
             timeout=240
         )
         if response.status_code == 200:

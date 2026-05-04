@@ -33,7 +33,7 @@ DESCRIPTION = "Acciones con internet (vuelos Google Flights, clima, noticias, co
 TRIGGERS = ["clima", "tiempo", "vuelo", "vuelos", "viaje", "viajar", "comprar", "pedir", "noticias", "avión", "avion", "aeropuerto", "pasaje", "pasajes"]
 
 # Configuración APIs
-SERPAPI_KEY = "1123df78ec275d724713944cb9ce935c5700deeed7aae365d34a0b64f300bbf3"
+SERPAPI_KEY = os.getenv("SERPAPI_KEY", "")
 
 def can_handle(prompt):
     """Verifica si el plugin puede manejar la solicitud"""
