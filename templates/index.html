@@ -3,18 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>JARVIS-CARAGUÁ | Neural Interface</title>
+    <title>PEARL HOME</title>
+    <link rel="icon" href="/static/favicon.ico?v=4">
+    <link rel="apple-touch-icon" href="/static/icon-192.png"> 
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/static/icon-512.png">
     <style>
         :root {
-            --bg-dark: #0a0c12;
-            --bg-darker: #05070c;
-            --accent-cyan: #00d4ff;
-            --accent-gold: #ffd966;
-            --accent-red: #ff4444;
-            --text-dim: #8892b0;
-            --text-bright: #e0f7fa;
-            --glow-cyan: 0 0 10px rgba(0, 212, 255, 0.5);
-            --glow-gold: 0 0 10px rgba(255, 217, 102, 0.5);
+            --bg-dark: #050b12;
+            --bg-darker: #02060a;
+            --bg-card: rgba(10, 18, 28, 0.88);
+            --bg-card-soft: rgba(255, 255, 255, 0.035);
+            --bg-glass: rgba(255, 255, 255, 0.03);
+
+            --accent-primary: #67e3ff;
+            --accent-primary-2: #98f0ff;
+            --accent-primary-soft: rgba(103, 227, 255, 0.14);
+            --accent-secondary: #ffe3a5;
+            --accent-danger: #ff6b6b;
+            --accent-success: #68f0aa;
+
+            --text-main: #eefbfd;
+            --text-soft: #c2d2e0;
+            --text-dim: #7e8ea0;
+
+            --line-soft: rgba(103, 227, 255, 0.10);
+            --line-strong: rgba(103, 227, 255, 0.18);
+
+            --glow-primary: 0 0 20px rgba(103, 227, 255, 0.22);
+            --glow-secondary: 0 0 14px rgba(255, 227, 165, 0.18);
+            --shadow-soft: 0 14px 38px rgba(0, 0, 0, 0.32);
+            --shadow-card: 0 20px 42px rgba(0, 0, 0, 0.28);
+
+            --radius-xl: 26px;
+            --radius-lg: 20px;
+            --radius-md: 16px;
+            --radius-sm: 12px;
+
+            --header-h: 60px;
+            --status-h: 68px;
+            --nav-h: 66px;
         }
 
         * {
@@ -24,34 +52,97 @@
             cursor: none;
         }
 
-        body {
-            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-darker) 100%);
-            color: var(--text-bright);
-            font-family: 'Courier New', 'SF Mono', 'Fira Code', monospace;
-            height: 100vh;
+        html, body {
+            height: 100%;
             overflow: hidden;
+        }
+
+        body {
+            font-family: Inter, "Segoe UI", Arial, sans-serif;
+            color: var(--text-main);
+            background:
+                radial-gradient(circle at 15% 10%, rgba(103, 227, 255, 0.10), transparent 26%),
+                radial-gradient(circle at 85% 15%, rgba(255, 227, 165, 0.06), transparent 24%),
+                radial-gradient(circle at 80% 80%, rgba(103, 227, 255, 0.08), transparent 22%),
+                linear-gradient(145deg, var(--bg-dark) 0%, var(--bg-darker) 100%);
             position: relative;
         }
 
-        /* Cursor personalizado */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            background:
+                linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+            background-size: 34px 34px;
+            mask-image: radial-gradient(circle at center, rgba(0,0,0,0.9) 30%, transparent 95%);
+            opacity: 0.16;
+            z-index: 0;
+        }
+
+        .bg-orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(48px);
+            opacity: 0.22;
+            pointer-events: none;
+            z-index: 0;
+            animation: floatOrb 18s ease-in-out infinite;
+        }
+
+        .bg-orb.orb-a {
+            width: 220px;
+            height: 220px;
+            background: rgba(103, 227, 255, 0.18);
+            top: -40px;
+            left: -30px;
+        }
+
+        .bg-orb.orb-b {
+            width: 180px;
+            height: 180px;
+            background: rgba(255, 227, 165, 0.14);
+            right: -20px;
+            top: 16%;
+            animation-delay: -4s;
+        }
+
+        .bg-orb.orb-c {
+            width: 210px;
+            height: 210px;
+            background: rgba(103, 227, 255, 0.10);
+            bottom: -30px;
+            right: 16%;
+            animation-delay: -8s;
+        }
+
+        @keyframes floatOrb {
+            0%   { transform: translateY(0) translateX(0) scale(1); }
+            50%  { transform: translateY(16px) translateX(10px) scale(1.05); }
+            100% { transform: translateY(0) translateX(0) scale(1); }
+        }
+
         .cursor {
             position: fixed;
-            width: 20px;
-            height: 20px;
-            border: 2px solid var(--accent-cyan);
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--accent-primary);
             border-radius: 50%;
             pointer-events: none;
             z-index: 9999;
-            transition: all 0.1s ease;
+            transition: all 0.10s ease;
             transform: translate(-50%, -50%);
-            box-shadow: var(--glow-cyan);
+            box-shadow: var(--glow-primary);
+            background: rgba(103, 227, 255, 0.02);
         }
 
         .cursor-dot {
             position: fixed;
             width: 4px;
             height: 4px;
-            background: var(--accent-cyan);
+            background: var(--accent-primary);
             border-radius: 50%;
             pointer-events: none;
             z-index: 9999;
@@ -60,27 +151,30 @@
         }
 
         .cursor.hover {
-            width: 40px;
-            height: 40px;
-            border-color: var(--accent-gold);
-            box-shadow: var(--glow-gold);
-            background: rgba(255, 217, 102, 0.1);
+            width: 34px;
+            height: 34px;
+            border-color: var(--accent-secondary);
+            box-shadow: var(--glow-secondary);
+            background: rgba(255, 227, 165, 0.08);
         }
 
-        /* Pantalla de Autenticación */
+        .app-layer {
+            position: relative;
+            z-index: 2;
+            height: 100%;
+        }
+
+        /* AUTH */
         .auth-overlay {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(5, 7, 12, 0.98);
-            backdrop-filter: blur(12px);
+            inset: 0;
+            background: rgba(2, 6, 10, 0.96);
+            backdrop-filter: blur(18px);
             z-index: 1000;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            transition: all 0.8s ease;
         }
 
         .auth-overlay.hidden {
@@ -90,15 +184,14 @@
         }
 
         .auth-container {
-            background: rgba(0, 212, 255, 0.03);
-            border: 1px solid var(--accent-cyan);
-            border-radius: 20px;
-            padding: 50px 40px;
-            width: 90%;
-            max-width: 450px;
-            text-align: center;
-            box-shadow: var(--glow-cyan);
-            animation: fadeInUp 0.5s ease;
+            width: min(92%, 430px);
+            border-radius: 30px;
+            padding: 34px 28px 28px;
+            background:
+                linear-gradient(180deg, rgba(103, 227, 255, 0.05), rgba(255,255,255,0.02)),
+                rgba(7, 14, 21, 0.94);
+            border: 1px solid rgba(103, 227, 255, 0.22);
+            box-shadow: 0 22px 60px rgba(0,0,0,0.48), var(--glow-primary);
             position: relative;
             overflow: hidden;
         }
@@ -106,25 +199,633 @@
         .auth-container::before {
             content: '';
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(to bottom, transparent 50%, rgba(0,212,255,0.05) 50%);
+            inset: 0;
+            background: linear-gradient(to bottom, transparent 48%, rgba(103,227,255,0.035) 50%, transparent 52%);
             background-size: 100% 4px;
+            animation: authScan 12s linear infinite;
             pointer-events: none;
-            animation: scan 12s linear infinite;
         }
 
-        @keyframes scan {
+        @keyframes authScan {
             0% { transform: translateY(-100%); }
             100% { transform: translateY(100%); }
         }
 
-        @keyframes fadeInUp {
+        .auth-topline {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 18px;
+        }
+
+        .auth-chip {
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: rgba(103, 227, 255, 0.08);
+            border: 1px solid rgba(103, 227, 255, 0.18);
+            color: var(--accent-primary);
+            font-size: 0.68rem;
+            letter-spacing: 0.10em;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .auth-logo {
+            width: 78px;
+            height: 78px;
+            margin: 6px auto 18px;
+            border-radius: 22px;
+            display: grid;
+            place-items: center;
+            font-size: 2rem;
+            background: linear-gradient(145deg, rgba(103, 227, 255, 0.18), rgba(255,255,255,0.025));
+            border: 1px solid rgba(103, 227, 255, 0.24);
+            box-shadow: var(--glow-primary);
+        }
+
+        .auth-title {
+            font-size: 1.7rem;
+            font-weight: 900;
+            letter-spacing: 0.10em;
+            text-align: center;
+            color: var(--accent-primary);
+            margin-bottom: 8px;
+        }
+
+        .auth-subtitle {
+            text-align: center;
+            font-size: 0.82rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            margin-bottom: 24px;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 16px;
+            border-radius: 16px;
+            border: 1px solid rgba(103, 227, 255, 0.28);
+            background: rgba(255,255,255,0.02);
+            color: var(--text-main);
+            font-size: 1.35rem;
+            text-align: center;
+            letter-spacing: 10px;
+            outline: none;
+            margin-bottom: 16px;
+        }
+
+        .auth-input:focus {
+            box-shadow: var(--glow-primary);
+            border-color: rgba(103, 227, 255, 0.40);
+        }
+
+        .auth-btn {
+            width: 100%;
+            min-height: 50px;
+            border: none;
+            border-radius: 16px;
+            font-size: 1rem;
+            font-weight: 800;
+            background: linear-gradient(180deg, var(--accent-primary-2), var(--accent-primary));
+            color: #061018;
+            transition: 0.2s ease;
+            box-shadow: var(--glow-primary);
+        }
+
+        .auth-btn:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.04);
+        }
+
+        .auth-error,
+        .auth-success {
+            margin-top: 14px;
+            display: none;
+            font-size: 0.84rem;
+            text-align: center;
+        }
+
+        .auth-error { color: var(--accent-danger); }
+        .auth-success { color: var(--accent-secondary); }
+
+        /* MAIN */
+        .main-interface {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            opacity: 0;
+            transition: opacity 0.8s ease;
+        }
+
+        .main-interface.active {
+            opacity: 1;
+        }
+
+        .topbar {
+            height: var(--header-h);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 14px;
+            border-bottom: 1px solid var(--line-soft);
+            background: rgba(0, 0, 0, 0.22);
+            backdrop-filter: blur(14px);
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .brand-logo {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            background: linear-gradient(145deg, rgba(103, 227, 255, 0.20), rgba(255,255,255,0.03));
+            border: 1px solid rgba(103, 227, 255, 0.24);
+            box-shadow: var(--glow-primary);
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .brand-text {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .brand-title {
+            font-size: 1rem;
+            font-weight: 900;
+            letter-spacing: 0.10em;
+            white-space: nowrap;
+        }
+
+        .brand-subtitle {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            letter-spacing: 0.10em;
+            text-transform: uppercase;
+            margin-top: 2px;
+            white-space: nowrap;
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .mini-chip {
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(103, 227, 255, 0.18);
+            background: rgba(103, 227, 255, 0.08);
+            color: var(--accent-primary);
+            font-size: 0.70rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            white-space: nowrap;
+        }
+
+        .mini-chip.secondary {
+            color: var(--accent-secondary);
+            border-color: rgba(255, 227, 165, 0.18);
+            background: rgba(255, 227, 165, 0.06);
+        }
+
+        .status-bar {
+            height: var(--status-h);
+            flex-shrink: 0;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--line-soft);
+            background: rgba(0, 0, 0, 0.28);
+            backdrop-filter: blur(10px);
+        }
+
+        .status-item {
+            min-height: 48px;
+            border-radius: 14px;
+            padding: 8px 10px;
+            border: 1px solid var(--line-soft);
+            background: rgba(255,255,255,0.03);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
+        }
+
+        .status-label {
+            font-size: 0.62rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.10em;
+            font-weight: 700;
+        }
+
+        .status-value {
+            font-size: 0.84rem;
+            font-weight: 800;
+            color: var(--text-main);
+        }
+
+        .status-online {
+            color: var(--accent-success);
+        }
+
+        .content-shell {
+            flex: 1;
+            min-height: 0;
+            position: relative;
+            padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+        }
+
+        .screen {
+            display: none;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .screen.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .screen-scroll {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 12px 12px 16px;
+            scroll-behavior: smooth;
+        }
+
+        .screen-scroll::-webkit-scrollbar,
+        #chat-container::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .screen-scroll::-webkit-scrollbar-track,
+        #chat-container::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.04);
+        }
+
+        .screen-scroll::-webkit-scrollbar-thumb,
+        #chat-container::-webkit-scrollbar-thumb {
+            background: var(--accent-primary);
+            border-radius: 999px;
+        }
+
+        .card {
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015)),
+                var(--bg-card);
+            border: 1px solid var(--line-soft);
+            border-radius: 22px;
+            padding: 14px;
+            box-shadow: var(--shadow-card);
+            backdrop-filter: blur(14px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(103,227,255,0.04), transparent 45%, rgba(255,255,255,0.015));
+            pointer-events: none;
+        }
+
+        .card + .card {
+            margin-top: 12px;
+        }
+
+        .section-title {
+            color: var(--accent-primary);
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            font-weight: 900;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-light {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            padding: 14px;
+            border-radius: 18px;
+            background:
+                radial-gradient(circle at top left, rgba(103, 227, 255, 0.14), transparent 38%),
+                linear-gradient(145deg, rgba(103, 227, 255, 0.08), rgba(255,255,255,0.02));
+            border: 1px solid rgba(103, 227, 255, 0.12);
+        }
+
+        .hero-light-left {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            min-width: 0;
+        }
+
+        .hero-kicker {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .hero-title {
+            font-size: 1.02rem;
+            font-weight: 900;
+        }
+
+        .hero-desc {
+            font-size: 0.76rem;
+            color: var(--accent-secondary);
+        }
+
+        .hero-side {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: flex-end;
+            flex-shrink: 0;
+        }
+
+        .hero-pill {
+            min-width: 72px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(103, 227, 255, 0.20);
+            background: rgba(103, 227, 255, 0.08);
+            color: var(--accent-primary);
+            text-align: center;
+            font-weight: 900;
+            font-size: 0.72rem;
+            letter-spacing: 0.06em;
+        }
+
+        .hero-indicator {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(104, 240, 170, 0.08);
+            border: 1px solid rgba(104, 240, 170, 0.18);
+            color: var(--accent-success);
+            font-size: 0.66rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .btn {
+            min-height: 46px;
+            border-radius: 15px;
+            border: 1px solid rgba(103, 227, 255, 0.18);
+            background: rgba(255,255,255,0.04);
+            color: var(--text-main);
+            padding: 10px 12px;
+            transition: 0.22s ease;
+            font-size: 0.84rem;
+            font-weight: 800;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+        }
+
+        .btn:hover {
+            background: rgba(103, 227, 255, 0.12);
+            box-shadow: var(--glow-primary);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(180deg, var(--accent-primary-2), var(--accent-primary));
+            color: #061018;
+            border-color: transparent;
+            box-shadow: var(--glow-primary);
+        }
+
+        .btn-primary:hover {
+            filter: brightness(1.03);
+        }
+
+        .btn-danger {
+            border-color: rgba(255, 107, 107, 0.32);
+        }
+
+        .btn-danger:hover {
+            background: rgba(255, 107, 107, 0.12);
+            box-shadow: 0 0 12px rgba(255, 107, 107, 0.24);
+        }
+
+        .scene-btn {
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .scene-btn strong {
+            font-size: 0.84rem;
+        }
+
+        .scene-btn span {
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            font-weight: 700;
+        }
+
+        .color-red {
+            border-color: rgba(255, 103, 103, 0.34);
+            color: #ffabab;
+        }
+
+        .color-blue {
+            border-color: rgba(97, 171, 255, 0.34);
+            color: #b0d5ff;
+        }
+
+        .color-green {
+            border-color: rgba(74, 224, 135, 0.34);
+            color: #9cf2c0;
+        }
+
+        .range-card {
+            position: relative;
+            z-index: 1;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--line-soft);
+            border-radius: 18px;
+            padding: 14px;
+        }
+
+        .range-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            color: var(--text-dim);
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+        }
+
+        #brightnessSlider {
+            width: 100%;
+            accent-color: var(--accent-primary);
+        }
+
+        .range-footer {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            margin-bottom: 12px;
+            color: var(--text-dim);
+            font-size: 0.68rem;
+            font-weight: 700;
+        }
+
+        #brightnessValue {
+            color: var(--accent-primary);
+            font-weight: 900;
+            font-size: 0.82rem;
+        }
+
+        .stat-mini-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .mini-panel {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--line-soft);
+            border-radius: 16px;
+            padding: 12px;
+        }
+
+        .mini-panel-label {
+            color: var(--text-dim);
+            font-size: 0.64rem;
+            text-transform: uppercase;
+            letter-spacing: 0.10em;
+            margin-bottom: 4px;
+            font-weight: 800;
+        }
+
+        .mini-panel-value {
+            color: var(--text-main);
+            font-size: 0.88rem;
+            font-weight: 900;
+        }
+
+        .music-search {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .music-search input,
+        #input-area input {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(103, 227, 255, 0.18);
+            color: var(--text-main);
+            padding: 12px 13px;
+            outline: none;
+            border-radius: 15px;
+            font-size: 0.92rem;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+        }
+
+        .music-search input:focus,
+        #input-area input:focus {
+            box-shadow: var(--glow-primary);
+            border-color: rgba(103, 227, 255, 0.32);
+        }
+
+        .music-pills {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+            position: relative;
+            z-index: 1;
+        }
+
+        .pill-btn {
+            padding: 10px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(103, 227, 255, 0.16);
+            background: rgba(255,255,255,0.03);
+            color: var(--text-soft);
+            font-size: 0.74rem;
+            font-weight: 800;
+        }
+
+        .pill-btn:hover {
+            background: rgba(103, 227, 255, 0.10);
+            color: var(--accent-primary);
+        }
+
+        /* CONSOLE */
+        .console-layout {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            min-height: 0;
+            padding-bottom: 8px;
+        }
+
+        #chat-container {
+            flex: 1;
+            min-height: 0;
+            padding: 12px 12px 8px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 12px;
+            animation: slideIn 0.22s ease;
+        }
+
+        @keyframes slideIn {
             from {
                 opacity: 0;
-                transform: translateY(30px);
+                transform: translateY(10px);
             }
             to {
                 opacity: 1;
@@ -132,495 +833,1123 @@
             }
         }
 
-        .auth-icon {
-            font-size: 4rem;
-            margin-bottom: 20px;
-            animation: pulseGlow 2s infinite;
+        .message.user-msg {
+            display: flex;
+            justify-content: flex-end;
         }
 
-        .auth-title {
-            font-size: 1.5rem;
-            letter-spacing: 3px;
-            margin-bottom: 10px;
-            color: var(--accent-cyan);
-            text-shadow: var(--glow-cyan);
+        .message.jarvis-msg {
+            display: flex;
+            justify-content: flex-start;
         }
 
-        .auth-subtitle {
-            font-size: 0.8rem;
-            color: var(--text-dim);
-            margin-bottom: 30px;
-        }
-
-        .auth-input {
-            width: 100%;
-            padding: 15px;
-            background: transparent;
-            border: 1px solid var(--accent-cyan);
-            color: var(--text-bright);
-            font-size: 1.5rem;
-            text-align: center;
-            letter-spacing: 8px;
-            margin-bottom: 25px;
-            outline: none;
-            font-family: monospace;
-        }
-
-        .auth-input:focus {
-            box-shadow: var(--glow-cyan);
-        }
-
-        .auth-btn {
-            background: var(--accent-cyan);
-            color: black;
-            border: none;
-            padding: 12px 30px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: 0.3s;
-            width: 100%;
-            font-size: 1rem;
-        }
-
-        .auth-btn:hover {
-            box-shadow: var(--glow-cyan);
-            background: #fff;
-        }
-
-        .auth-error {
-            color: var(--accent-red);
-            margin-top: 20px;
-            font-size: 0.8rem;
-            display: none;
-            text-shadow: 0 0 5px rgba(255,68,68,0.5);
-        }
-
-        .auth-success {
-            color: var(--accent-gold);
-            margin-top: 20px;
-            display: none;
-        }
-
-        /* Interfaz Principal */
-        .main-interface {
+        .msg-wrap {
+            max-width: 88%;
             display: flex;
             flex-direction: column;
-            height: 100vh;
-            opacity: 0;
-            transition: opacity 1s ease;
+            gap: 5px;
         }
 
-        .main-interface.active {
-            opacity: 1;
+        .message.user-msg .msg-wrap {
+            align-items: flex-end;
         }
 
-        header {
-            padding: 20px;
-            text-align: center;
-            border-bottom: 1px solid var(--accent-cyan);
-            letter-spacing: 2px;
-            position: relative;
+        .message.jarvis-msg .msg-wrap {
+            align-items: flex-start;
         }
 
-        header::after {
-            content: '';
-            position: absolute;
-            bottom: -1px;
-            left: 0;
-            width: 100%;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
-        }
-
-        .status-bar {
+        .msg-head {
             display: flex;
-            justify-content: space-between;
-            padding: 8px 20px;
-            background: rgba(0, 0, 0, 0.5);
-            font-size: 0.7rem;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.66rem;
             color: var(--text-dim);
-            border-bottom: 1px solid rgba(0, 212, 255, 0.3);
+            letter-spacing: 0.06em;
+            font-weight: 800;
+            text-transform: uppercase;
         }
 
-        .status-online {
-            color: #00ff88;
-            animation: pulse 1.5s infinite;
+        .msg-avatar {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            font-size: 0.74rem;
+            flex-shrink: 0;
+            border: 1px solid rgba(103, 227, 255, 0.16);
+            background: rgba(255,255,255,0.04);
         }
 
-        @keyframes pulse {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 1; text-shadow: 0 0 5px #00ff88; }
+        .msg-time {
+            color: var(--text-dim);
         }
 
-        @keyframes pulseGlow {
-            0%, 100% { text-shadow: 0 0 5px var(--accent-cyan); }
-            50% { text-shadow: 0 0 20px var(--accent-cyan); }
-        }
-
-        #chat-container {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-        }
-
-        .message {
-            margin-bottom: 20px;
-            animation: slideIn 0.2s ease;
-        }
-
-        @keyframes slideIn {
-            from {
-                opacity: 0;
-                transform: translateX(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateX(0);
-            }
-        }
-
-        .user-msg {
-            text-align: right;
+        .msg-bubble {
+            display: inline-block;
+            padding: 11px 13px;
+            border-radius: 16px;
+            line-height: 1.45;
+            font-size: 0.92rem;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.18);
         }
 
         .user-msg .msg-bubble {
-            background: rgba(255, 255, 255, 0.08);
-            border-left: 3px solid var(--accent-gold);
-            display: inline-block;
-            padding: 10px 18px;
-            border-radius: 8px;
-            max-width: 80%;
+            background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.04));
+            border: 1px solid rgba(255, 227, 165, 0.18);
+            border-top-right-radius: 6px;
         }
 
         .jarvis-msg .msg-bubble {
-            background: rgba(0, 212, 255, 0.03);
-            border-left: 3px solid var(--accent-cyan);
-            display: inline-block;
-            padding: 10px 18px;
-            border-radius: 8px;
-            max-width: 80%;
+            background: linear-gradient(180deg, rgba(103, 227, 255, 0.08), rgba(255,255,255,0.02));
+            border: 1px solid rgba(103, 227, 255, 0.16);
+            border-top-left-radius: 6px;
         }
 
         .brain-tag {
-            font-size: 0.65rem;
-            color: var(--accent-cyan);
-            display: block;
-            margin-bottom: 6px;
-            letter-spacing: 1px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.62rem;
+            color: var(--accent-primary);
+            letter-spacing: 0.10em;
+            font-weight: 900;
+            text-transform: uppercase;
+            margin-bottom: 7px;
         }
 
         .brain-tag.critico {
-            color: var(--accent-gold);
-        }
-
-        #input-area {
-            padding: 20px;
-            background: rgba(0, 0, 0, 0.6);
-            display: flex;
-            gap: 12px;
-            border-top: 1px solid var(--accent-cyan);
-        }
-
-        #input-area input {
-            flex: 1;
-            background: transparent;
-            border: 1px solid var(--accent-cyan);
-            color: var(--text-bright);
-            padding: 14px;
-            outline: none;
-            font-family: monospace;
-            transition: 0.2s;
-        }
-
-        #input-area input:focus {
-            box-shadow: var(--glow-cyan);
-        }
-
-        #input-area button {
-            background: var(--accent-cyan);
-            color: black;
-            border: none;
-            padding: 0 24px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: 0.3s;
-        }
-
-        #input-area button:hover {
-            box-shadow: var(--glow-cyan);
-            background: #fff;
+            color: var(--accent-secondary);
         }
 
         .loading {
             display: none;
-            text-align: center;
-            padding: 15px;
-            color: var(--accent-cyan);
-            font-style: italic;
+            padding: 4px 12px 8px;
+            flex-shrink: 0;
         }
 
         .loading.active {
             display: block;
-            animation: pulse 1s infinite;
         }
 
-        #chat-container::-webkit-scrollbar {
-            width: 5px;
+        .typing-box {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(103, 227, 255, 0.05);
+            border: 1px solid rgba(103, 227, 255, 0.12);
+            border-radius: 14px;
+            padding: 10px 12px;
+            color: var(--accent-primary);
+            font-size: 0.78rem;
+            font-style: italic;
         }
 
-        #chat-container::-webkit-scrollbar-track {
-            background: #1a1a2e;
+        .typing-dots {
+            display: inline-flex;
+            gap: 4px;
         }
 
-        #chat-container::-webkit-scrollbar-thumb {
-            background: var(--accent-cyan);
-            border-radius: 3px;
+        .typing-dots span {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent-primary);
+            opacity: 0.28;
+            animation: blinkDots 1s infinite;
         }
+
+        .typing-dots span:nth-child(2) { animation-delay: 0.16s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.32s; }
+
+        @keyframes blinkDots {
+            0%, 100% { opacity: 0.25; transform: translateY(0); }
+            50% { opacity: 1; transform: translateY(-2px); }
+        }
+
+        #input-area {
+            padding: 10px 12px 12px;
+            background: rgba(4, 8, 13, 0.72);
+            display: flex;
+            gap: 8px;
+            border-top: 1px solid var(--line-soft);
+            flex-shrink: 0;
+            margin-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) - 8px);
+            backdrop-filter: blur(12px);
+        }
+
+        #input-area button {
+            min-height: 46px;
+            border: none;
+            border-radius: 15px;
+            padding: 0 16px;
+            font-weight: 900;
+            transition: 0.2s ease;
+        }
+
+        #sendBtn {
+            background: linear-gradient(180deg, var(--accent-primary-2), var(--accent-primary));
+            color: #061018;
+            box-shadow: var(--glow-primary);
+        }
+
+        #sendBtn:hover {
+            filter: brightness(1.03);
+        }
+
+        #clearBtn {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-soft);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        #clearBtn:hover {
+            background: rgba(255,255,255,0.08);
+        }
+
+        /* NAV */
+        .bottom-nav {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: calc(var(--nav-h) + env(safe-area-inset-bottom));
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: 12px;
+            padding-right: 12px;
+            background: rgba(4, 8, 13, 0.96);
+            backdrop-filter: blur(16px);
+            border-top: 1px solid rgba(103, 227, 255, 0.12);
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px;
+            align-items: center;
+            z-index: 999;
+        }
+
+        .nav-btn {
+            height: 50px;
+            border-radius: 17px;
+            border: 1px solid rgba(103, 227, 255, 0.12);
+            background: rgba(255,255,255,0.03);
+            color: var(--text-dim);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            font-size: 0.72rem;
+            font-weight: 800;
+            transition: 0.22s ease;
+        }
+
+        .nav-btn .icon {
+            font-size: 1rem;
+            line-height: 1;
+        }
+
+        .nav-btn.active {
+            color: #061018;
+            background: linear-gradient(180deg, var(--accent-primary-2), var(--accent-primary));
+            border-color: transparent;
+            box-shadow: var(--glow-primary);
+        }
+
+        .nav-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        @media (max-width: 760px) {
+            * { cursor: auto; }
+            .cursor, .cursor-dot { display: none; }
+        }
+
+        @media (max-width: 420px) {
+            .topbar-right .mini-chip.secondary {
+                display: none;
+            }
+
+            .hero-title {
+                font-size: 0.96rem;
+            }
+
+            .btn {
+                font-size: 0.80rem;
+            }
+
+            #input-area {
+                gap: 6px;
+            }
+
+            #input-area button {
+                padding: 0 12px;
+            }
+            .network-card {
+            margin-bottom: 12px;
+            padding: 14px;
+            border-radius: 22px;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015)),
+                var(--bg-card);
+            border: 1px solid var(--line-soft);
+            box-shadow: var(--shadow-card);
+            backdrop-filter: blur(14px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .network-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(103,227,255,0.04), transparent 45%, rgba(255,255,255,0.015));
+            pointer-events: none;
+        }
+
+        .network-head {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .network-title {
+            color: var(--accent-primary);
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            font-weight: 900;
+        }
+
+        .network-badge {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(103, 227, 255, 0.08);
+            border: 1px solid rgba(103, 227, 255, 0.18);
+            color: var(--accent-primary);
+            font-size: 0.64rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            white-space: nowrap;
+        }
+
+        .network-grid {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+
+        .network-item {
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.025);
+            border: 1px solid rgba(103, 227, 255, 0.08);
+        }
+
+        .network-label {
+            color: var(--text-dim);
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 0.10em;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .network-value {
+            color: var(--text-main);
+            font-size: 0.84rem;
+            font-weight: 900;
+            word-break: break-all;
+        }
+
+        .network-value.local {
+            color: var(--accent-secondary);
+        }
+
+        .network-value.lan {
+            color: var(--accent-primary);
+        }
+    }
     </style>
 </head>
 <body>
+    <div class="bg-orb orb-a"></div>
+    <div class="bg-orb orb-b"></div>
+    <div class="bg-orb orb-c"></div>
 
-<div class="cursor" id="cursor"></div>
-<div class="cursor-dot" id="cursor-dot"></div>
+    <div class="cursor" id="cursor"></div>
+    <div class="cursor-dot" id="cursor-dot"></div>
 
-<audio id="audioGranted" preload="auto">
-    <source src="/static/audio/acceso_ok.mp3" type="audio/mpeg">
-</audio>
-<audio id="audioDenied" preload="auto">
-    <source src="/static/audio/acceso_denegado.mp3" type="audio/mpeg">
-</audio>
-<audio id="audioWelcome" preload="auto">
-    <source src="/static/audio/bienvenida.mp3" type="audio/mpeg">
-</audio>
+    <div class="app-layer">
+        <audio id="audioGranted" preload="auto">
+            <source src="/static/audio/acceso_ok.mp3" type="audio/mpeg">
+        </audio>
+        <audio id="audioDenied" preload="auto">
+            <source src="/static/audio/acceso_denegado.mp3" type="audio/mpeg">
+        </audio>
+        <audio id="audioWelcome" preload="auto">
+            <source src="/static/audio/bienvenida.mp3" type="audio/mpeg">
+        </audio>
 
-<div class="auth-overlay" id="authOverlay">
-    <div class="auth-container">
-        <div class="auth-icon">🔷</div>
-        <div class="auth-title">JARVIS - CARAGUÁ</div>
-        <div class="auth-subtitle">SISTEMA DE SEGURIDAD</div>
-        <input type="password" class="auth-input" id="pinInput" placeholder="••••" maxlength="4" autofocus>
-        <button class="auth-btn" onclick="authenticate()">VALIDAR ACCESO</button>
-        <div class="auth-error" id="authError">🔒 ACCESO DENEGADO</div>
-        <div class="auth-success" id="authSuccess">✅ ACCESO CONCEDIDO</div>
-    </div>
-</div>
+        <!-- AUTH -->
+        <div class="auth-overlay" id="authOverlay">
+            <div class="auth-container">
+                <div class="auth-topline">
+                    <div class="auth-chip">Secure Entry</div>
+                    <div class="auth-chip">v2.0</div>
+                </div>
 
-<div class="main-interface" id="mainInterface">
-    <header>🔷 J.A.R.V.I.S. - CARAGUÁ v2.0 | NEURAL INTERFACE 🔷</header>
-    <div class="status-bar">
-        <span>🖥️ CORE: <span id="brainStatus" class="status-online">ACTIVO</span></span>
-        <span>📡 PLUGINS: <span id="pluginStatus">--</span></span>
-        <span>⚡ ENERGÍA: <span id="batteryStatus">--%</span></span>
-    </div>
+                <div class="auth-logo">💠</div>
+                <div class="auth-title">PEARL HOME</div>
+                <div class="auth-subtitle">Sistema privado de automatización</div>
 
-    <div id="chat-container">
-        <div class="message jarvis-msg">
-            <div class="msg-bubble">
-                <span class="brain-tag">⚡ SISTEMA ⚡</span>
-                Señor, todos los sistemas están operativos. ¿Cómo puedo asistirle?
+                <input
+                    type="password"
+                    class="auth-input"
+                    id="pinInput"
+                    placeholder="••••"
+                    maxlength="4"
+                    autofocus
+                >
+
+                <button class="auth-btn" onclick="authenticate()">Ingresar al sistema</button>
+
+                <div class="auth-error" id="authError">🔒 Acceso denegado</div>
+                <div class="auth-success" id="authSuccess">✅ Acceso concedido</div>
+            </div>
+        </div>
+
+        <!-- MAIN -->
+        <div class="main-interface" id="mainInterface">
+            <div class="topbar">
+                <div class="topbar-left">
+                    <div class="brand-logo">💠</div>
+                    <div class="brand-text">
+                        <div class="brand-title">PEARL HOME</div>
+                        <div class="brand-subtitle">Smart Living Interface</div>
+                    </div>
+                </div>
+
+                <div class="topbar-right">
+                    <div class="mini-chip secondary" id="clockChip">--:--</div>
+                    <div class="mini-chip">ONLINE</div>
+                </div>
+            </div>
+
+            <div class="status-bar">
+                <div class="status-item">
+                    <div class="status-label">Core</div>
+                    <div class="status-value status-online" id="brainStatus">ACTIVO</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Plugins</div>
+                    <div class="status-value" id="pluginStatus">--</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Energía</div>
+                    <div class="status-value" id="batteryStatus">--%</div>
+                </div>
+            </div>
+
+            <div class="content-shell">
+                <!-- LUCES -->
+                <div class="screen active" id="lightsScreen">
+                    <div class="screen-scroll">
+
+                        <div class="network-card">
+                            <div class="network-head">
+                                <div class="network-title">Acceso de Red</div>
+                                <div class="network-badge" id="networkStatus">Detectando...</div>
+                            </div>
+
+                            <div class="network-grid">
+                                <div class="network-item">
+                                    <div class="network-label">Acceso local</div>
+                                    <div class="network-value local" id="localUrl">http://127.0.0.1:5004</div>
+                                </div>
+
+                                <div class="network-item">
+                                    <div class="network-label">IP LAN actual</div>
+                                    <div class="network-value lan" id="lanIp">Detectando...</div>
+                                </div>
+
+                                <div class="network-item">
+                                    <div class="network-label">Acceso desde otros dispositivos</div>
+                                    <div class="network-value lan" id="lanUrl">Detectando...</div>
+                                </div>
+                            </div>
+                        </div>
+                 
+                        <div class="card">
+                            <div class="section-title">Lighting Hub</div>
+                            <div class="hero-light">
+                                <div class="hero-light-left">
+                                    <div class="hero-kicker">Ambiente principal</div>
+                                    <div class="hero-title">Lámpara Cuarto</div>
+                                    <div class="hero-desc">Escenas, color y brillo inteligente</div>
+                                </div>
+                                <div class="hero-side">
+                                    <div class="hero-pill">HOME</div>
+                                    <div class="hero-indicator" id="lightIndicator">READY</div>
+                                </div>
+                            </div>
+
+                            <div class="stat-mini-grid">
+                                <div class="mini-panel">
+                                    <div class="mini-panel-label">Brillo</div>
+                                    <div class="mini-panel-value" id="miniBrightness">800</div>
+                                </div>
+                                <div class="mini-panel">
+                                    <div class="mini-panel-label">Modo</div>
+                                    <div class="mini-panel-value" id="miniMode">Normal</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Encendido</div>
+                            <div class="grid-2">
+                                <button class="btn btn-primary" onclick="runScene('prende la lámpara', 'Normal')">Encender</button>
+                                <button class="btn btn-danger" onclick="runScene('apaga la lámpara', 'Off')">Apagar</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Brillo</div>
+                            <div class="range-card">
+                                <div class="range-head">
+                                    <span>Control táctil premium</span>
+                                    <span id="brightnessValue">800</span>
+                                </div>
+
+                                <input
+                                    type="range"
+                                    id="brightnessSlider"
+                                    min="100"
+                                    max="1000"
+                                    step="50"
+                                    value="800"
+                                    oninput="updateBrightnessLabel(this.value)"
+                                >
+
+                                <div class="range-footer">
+                                    <span>Bajo</span>
+                                    <span>Medio</span>
+                                    <span>Alto</span>
+                                </div>
+
+                                <button class="btn btn-primary" onclick="applyBrightness()">Aplicar brillo</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Temperatura</div>
+                            <div class="grid-2">
+                                <button class="btn" onclick="runScene('luz cálida', 'Cálida')">Cálida</button>
+                                <button class="btn" onclick="runScene('luz fría', 'Fría')">Fría</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Colores</div>
+                            <div class="grid-3">
+                                <button class="btn color-red" onclick="runScene('luz rojo', 'Rojo')">Rojo</button>
+                                <button class="btn color-blue" onclick="runScene('luz azul', 'Azul')">Azul</button>
+                                <button class="btn color-green" onclick="runScene('luz verde', 'Verde')">Verde</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Escenas</div>
+                            <div class="grid-2">
+                                <button class="btn scene-btn" onclick="runScene('prende la lámpara', 'Normal')">
+                                    <strong>⚪ Normal</strong>
+                                    <span>Modo principal</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="runScene('luz lectura', 'Lectura')">
+                                    <strong>📖 Lectura</strong>
+                                    <span>Alta claridad</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="runScene('luz relax', 'Relax')">
+                                    <strong>🧘 Relax</strong>
+                                    <span>Más suave</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="runScene('luz noche', 'Noche')">
+                                    <strong>🌙 Noche</strong>
+                                    <span>Baja intensidad</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Control</div>
+                            <div class="grid-2">
+                                <button class="btn" onclick="sendQuickCommand('deshacer')">↩ Deshacer</button>
+                                <button class="btn" onclick="sendQuickCommand('restaurar')">🔄 Restaurar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- MUSICA -->
+                <div class="screen" id="musicScreen">
+                    <div class="screen-scroll">
+                        <div class="card">
+                            <div class="section-title">Music Engine</div>
+                            <div class="music-search">
+                                <input type="text" id="musicQuickInput" placeholder="Buscar música o artista...">
+                                <button class="btn btn-primary" onclick="playQuickMusic()">Play</button>
+                            </div>
+
+                            <div class="music-pills">
+                                <button class="pill-btn" onclick="setMusicPreset('lofi')">Lofi</button>
+                                <button class="pill-btn" onclick="setMusicPreset('synthwave')">Synthwave</button>
+                                <button class="pill-btn" onclick="setMusicPreset('jazz suave')">Jazz</button>
+                                <button class="pill-btn" onclick="setMusicPreset('música relajante')">Relax</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Controles</div>
+                            <div class="grid-2">
+                                <button class="btn" onclick="sendQuickCommand('play')">▶ Play</button>
+                                <button class="btn" onclick="sendQuickCommand('pausa')">⏸ Pausa</button>
+                                <button class="btn" onclick="sendQuickCommand('reanuda')">⏯ Reanudar</button>
+                                <button class="btn" onclick="sendQuickCommand('stop')">⏹ Stop</button>
+                                <button class="btn" onclick="sendQuickCommand('siguiente')">⏭ Siguiente</button>
+                                <button class="btn" onclick="sendQuickCommand('anterior')">⏮ Anterior</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Atajos</div>
+                            <div class="grid-2">
+                                <button class="btn scene-btn" onclick="sendQuickCommand('sube el volumen')">
+                                    <strong>🔊 Volumen +</strong>
+                                    <span>Aumentar audio</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="sendQuickCommand('baja el volumen')">
+                                    <strong>🔉 Volumen -</strong>
+                                    <span>Reducir audio</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="sendQuickCommand('silencio')">
+                                    <strong>🔇 Silencio</strong>
+                                    <span>Mute temporal</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="sendQuickCommand('pon algo relajante')">
+                                    <strong>✨ Ambiente</strong>
+                                    <span>Música suave</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CONSOLA -->
+                <div class="screen" id="consoleScreen">
+                    <div class="console-layout">
+                        <div id="chat-container">
+                            <div class="message jarvis-msg">
+                                <div class="msg-wrap">
+                                    <div class="msg-head">
+                                        <span class="msg-avatar">💠</span>
+                                        <span>PEARL SYSTEM</span>
+                                        <span class="msg-time" id="bootTime">--:--</span>
+                                    </div>
+                                    <div class="msg-bubble">
+                                        <span class="brain-tag">⚡ CORE ONLINE</span>
+                                        Bienvenido a PEARL HOME. Todo listo para controlar tu entorno.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="loading" id="loader">
+                            <div class="typing-box">
+                                <span>Procesando consulta</span>
+                                <div class="typing-dots">
+                                    <span></span><span></span><span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="input-area">
+                            <input
+                                type="text"
+                                id="userInput"
+                                placeholder="Escribe una orden..."
+                                onkeypress="handleKey(event)"
+                            >
+                            <button id="sendBtn" onclick="sendMessage()">▶</button>
+                            <button id="clearBtn" onclick="clearChat()">🗑</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-nav">
+                <button class="nav-btn active" data-screen="lightsScreen" onclick="switchScreen('lightsScreen', this)">
+                    <span class="icon">💡</span>
+                    <span>Luces</span>
+                </button>
+                <button class="nav-btn" data-screen="musicScreen" onclick="switchScreen('musicScreen', this)">
+                    <span class="icon">🎵</span>
+                    <span>Música</span>
+                </button>
+                <button class="nav-btn" data-screen="consoleScreen" onclick="switchScreen('consoleScreen', this)">
+                    <span class="icon">💬</span>
+                    <span>Consola</span>
+                </button>
             </div>
         </div>
     </div>
 
-    <div class="loading" id="loader">⚙️ PROCESANDO CONSULTA... ⚙️</div>
+    <script>
+        const TOKEN = 'Bearer jarvis_local_123';
 
-    <div id="input-area">
-        <input type="text" id="userInput" placeholder="Ingrese comando..." onkeypress="handleKey(event)">
-        <button onclick="sendMessage()">▶ EJECUTAR</button>
-        <button onclick="clearChat()">🗑️ LIMPIAR</button>
-    </div>
-</div>
+        const cursor = document.getElementById('cursor');
+        const cursorDot = document.getElementById('cursor-dot');
+        const chatContainer = document.getElementById('chat-container');
+        const userInput = document.getElementById('userInput');
+        const loader = document.getElementById('loader');
 
-<script>
-    const TOKEN = 'Bearer jarvis_local_123';
+        let isAuthenticated = false;
 
-    const cursor = document.getElementById('cursor');
-    const cursorDot = document.getElementById('cursor-dot');
-
-    document.addEventListener('mousemove', (e) => {
-        cursor.style.left = e.clientX + 'px';
-        cursor.style.top = e.clientY + 'px';
-        cursorDot.style.left = e.clientX + 'px';
-        cursorDot.style.top = e.clientY + 'px';
-    });
-
-    const interactiveElements = ['button', 'input', '.auth-btn'];
-    document.querySelectorAll(interactiveElements.join(',')).forEach(el => {
-        el.addEventListener('mouseenter', () => cursor.classList.add('hover'));
-        el.addEventListener('mouseleave', () => cursor.classList.remove('hover'));
-    });
-
-    function playAudio(id) {
-        const audio = document.getElementById(id);
-        if (audio) audio.play().catch(e => console.log('Audio:', e));
-    }
-
-    let isAuthenticated = false;
-
-    async function authenticate() {
-        const pin = document.getElementById('pinInput').value;
-        const authError = document.getElementById('authError');
-        const authSuccess = document.getElementById('authSuccess');
-        const authOverlay = document.getElementById('authOverlay');
-        const mainInterface = document.getElementById('mainInterface');
-
-        if (!pin || pin.length < 4) {
-            authError.style.display = 'block';
-            playAudio('audioDenied');
-            return;
-        }
-
-        try {
-            const response = await fetch('/ask_auth', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json',
-                           'Authorization': 'Bearer jarvis_local_123'
-                },
-                body: JSON.stringify({ pin: pin })
-            });
-            const data = await response.json();
-
-            if (data.success) {
-                authSuccess.style.display = 'block';
-                authError.style.display = 'none';
-                playAudio('audioGranted');
-                isAuthenticated = true;
-
-                setTimeout(() => {
-                    authOverlay.classList.add('hidden');
-                    mainInterface.classList.add('active');
-                    loadPluginsStatus();
-                    loadBatteryStatus();
-                    playAudio('audioWelcome');
-                }, 800);
-            } else {
-                authError.style.display = 'block';
-                playAudio('audioDenied');
-                document.getElementById('pinInput').value = '';
+        /* CURSOR */
+        document.addEventListener('mousemove', (e) => {
+            if (cursor) {
+                cursor.style.left = e.clientX + 'px';
+                cursor.style.top = e.clientY + 'px';
             }
-        } catch (err) {
-            authError.style.display = 'block';
-            document.getElementById('pinInput').value = '';
-        }
-    }
-
-    async function loadPluginsStatus() {
-        try {
-            const res = await fetch('/plugins', {
-                headers: {
-                    'Authorization': TOKEN
-                }
-            });
-            const data = await res.json();
-            document.getElementById('pluginStatus').innerText = data.total;
-        } catch(e) {
-            document.getElementById('pluginStatus').innerText = '?';
-        }
-    }
-
-    async function loadBatteryStatus() {
-        try {
-            const res = await fetch('/battery', {
-                headers: {
-                    'Authorization': TOKEN
-                }
-            });
-            const data = await res.json();
-            document.getElementById('batteryStatus').innerText = `${data.percentage}%`;
-        } catch(e) {
-            document.getElementById('batteryStatus').innerText = '--%';
-        }
-    }
-
-    const chatContainer = document.getElementById('chat-container');
-    const userInput = document.getElementById('userInput');
-    const loader = document.getElementById('loader');
-
-    function escapeHtml(text) {
-        if (!text) return '';
-        return text.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
+            if (cursorDot) {
+                cursorDot.style.left = e.clientX + 'px';
+                cursorDot.style.top = e.clientY + 'px';
+            }
         });
-    }
 
-    function addUserMessage(text) {
-        chatContainer.innerHTML += `
-            <div class="message user-msg">
-                <div class="msg-bubble">💬 ${escapeHtml(text)}</div>
-            </div>
-        `;
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    function addBotMessage(text, brain, plugin) {
-        const isCritico = brain === 'critical' || (brain && brain.includes('Crítico'));
-        const tagClass = isCritico ? 'brain-tag critico' : 'brain-tag';
-        const icon = isCritico ? '🖥️' : '📱';
-        const displayBrain = brain || plugin || 'JARVIS';
-        
-        chatContainer.innerHTML += `
-            <div class="message jarvis-msg">
-                <div class="msg-bubble">
-                    <span class="${tagClass}">${icon} ${escapeHtml(displayBrain)}</span>
-                    ${escapeHtml(text)}
-                </div>
-            </div>
-        `;
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    async function sendMessage() {
-        if (!isAuthenticated) return;
-
-        const text = userInput.value.trim();
-        if (!text) return;
-
-        addUserMessage(text);
-        userInput.value = '';
-        loader.classList.add('active');
-
-        try {
-            const response = await fetch('/ask', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json',
-                           'Authorization': 'Bearer jarvis_local_123'
-                },
-                body: JSON.stringify({ pregunta: text })
+        const interactiveElements = ['button', 'input', '.auth-btn'];
+        document.querySelectorAll(interactiveElements.join(',')).forEach(el => {
+            el.addEventListener('mouseenter', () => {
+                if (cursor) cursor.classList.add('hover');
             });
-            const data = await response.json();
-            addBotMessage(data.respuesta || data.response, data.cerebro, data.plugin);
-        } catch (error) {
-            addBotMessage(`Error de comunicación: ${error.message}`, 'SISTEMA');
-        } finally {
-            loader.classList.remove('active');
+            el.addEventListener('mouseleave', () => {
+                if (cursor) cursor.classList.remove('hover');
+            });
+        });
+
+        /* HELPERS */
+        function playAudio(id) {
+            const audio = document.getElementById(id);
+            if (audio) {
+                audio.play().catch(err => console.log('Audio:', err));
+            }
         }
-    }
 
-    function clearChat() {
-        chatContainer.innerHTML = `
-            <div class="message jarvis-msg">
-                <div class="msg-bubble">
-                    <span class="brain-tag">⚡ SISTEMA ⚡</span>
-                    Señor, interfaz reiniciada. Listo para nuevas órdenes.
+        function escapeHtml(text) {
+            if (!text) return '';
+            return String(text).replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        function getTimeString() {
+            const now = new Date();
+            return now.toLocaleTimeString('es-ES', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function updateClock() {
+            const clockChip = document.getElementById('clockChip');
+            if (clockChip) {
+                clockChip.textContent = getTimeString();
+            }
+        }
+
+        function setBootTime() {
+            const bootTime = document.getElementById('bootTime');
+            if (bootTime) {
+                bootTime.textContent = getTimeString();
+            }
+        }
+
+        setInterval(updateClock, 1000);
+        updateClock();
+        setBootTime();
+
+        async function apiFetch(url, options = {}) {
+            const config = {
+                ...options,
+                headers: {
+                    'Authorization': TOKEN,
+                    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+                    ...(options.headers || {})
+                }
+            };
+
+            const response = await fetch(url, config);
+
+            let data = {};
+            try {
+                data = await response.json();
+            } catch (e) {
+                data = {};
+            }
+
+            if (!response.ok) {
+                const message = data.error || data.message || `HTTP ${response.status}`;
+                throw new Error(message);
+            }
+
+            return data;
+        }
+
+        /* SCREEN NAV */
+        function switchScreen(screenId, btn) {
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+            });
+
+            document.querySelectorAll('.nav-btn').forEach(button => {
+                button.classList.remove('active');
+            });
+
+            const screen = document.getElementById(screenId);
+            if (screen) screen.classList.add('active');
+            if (btn) btn.classList.add('active');
+        }
+
+        /* AUTH */
+        async function authenticate() {
+            const pinInput = document.getElementById('pinInput');
+            const authError = document.getElementById('authError');
+            const authSuccess = document.getElementById('authSuccess');
+            const authOverlay = document.getElementById('authOverlay');
+            const mainInterface = document.getElementById('mainInterface');
+            const pin = pinInput ? pinInput.value.trim() : '';
+
+            if (authError) authError.style.display = 'none';
+            if (authSuccess) authSuccess.style.display = 'none';
+
+            if (!pin || pin.length < 4) {
+                if (authError) {
+                    authError.innerText = '🔒 Acceso denegado';
+                    authError.style.display = 'block';
+                }
+                playAudio('audioDenied');
+                return;
+            }
+
+            try {
+                const data = await apiFetch('/ask_auth', {
+                    method: 'POST',
+                    body: JSON.stringify({ pin })
+                });
+
+                if (data.success) {
+                    isAuthenticated = true;
+
+                    if (authSuccess) {
+                        authSuccess.innerText = data.message || '✅ Acceso concedido';
+                        authSuccess.style.display = 'block';
+                    }
+
+                    if (authError) authError.style.display = 'none';
+                    playAudio('audioGranted');
+
+                    setTimeout(async () => {
+                        if (authOverlay) authOverlay.classList.add('hidden');
+                        if (mainInterface) mainInterface.classList.add('active');
+
+                        await loadPluginsStatus();
+                        await loadBatteryStatus();
+                        await loadNetworkInfo();
+
+                        setInterval(loadNetworkInfo, 10000);
+
+                        playAudio('audioWelcome');
+                    }, 800);
+                } else {
+                    throw new Error(data.message || 'PIN incorrecto');
+                }
+            } catch (err) {
+                console.error('Error en authenticate():', err);
+
+                if (authError) {
+                    authError.innerText = `🔒 ${err.message || 'Acceso denegado'}`;
+                    authError.style.display = 'block';
+                }
+
+                if (pinInput) pinInput.value = '';
+                playAudio('audioDenied');
+            }
+        }
+
+        document.getElementById('pinInput')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') authenticate();
+        });
+
+        /* STATUS */
+        async function loadPluginsStatus() {
+            const pluginStatus = document.getElementById('pluginStatus');
+
+            try {
+                const data = await apiFetch('/plugins');
+                if (pluginStatus) pluginStatus.innerText = data.total ?? '?';
+            } catch (e) {
+                console.error('Error /plugins:', e);
+                if (pluginStatus) pluginStatus.innerText = '?';
+            }
+        }
+
+        async function loadBatteryStatus() {
+            const batteryStatus = document.getElementById('batteryStatus');
+
+            try {
+                const data = await apiFetch('/battery');
+                if (batteryStatus) batteryStatus.innerText = `${data.percentage ?? '--'}%`;
+            } catch (e) {
+                console.error('Error /battery:', e);
+                if (batteryStatus) batteryStatus.innerText = '--%';
+            }
+        }
+        
+        async function loadNetworkInfo() {
+            const localUrl = document.getElementById('localUrl');
+            const lanIp = document.getElementById('lanIp');
+            const lanUrl = document.getElementById('lanUrl');
+            const networkStatus = document.getElementById('networkStatus');
+
+            try {
+                const data = await apiFetch('/network');
+
+                if (localUrl) localUrl.innerText = data.localhost || 'http://127.0.0.1:5004';
+                if (lanIp) lanIp.innerText = data.lan_ip || 'No disponible';
+                if (lanUrl) lanUrl.innerText = data.lan_url || 'No disponible';
+                if (networkStatus) networkStatus.innerText = 'ONLINE';
+            } catch (e) {
+                console.error('Error /network:', e);
+
+                if (lanIp) lanIp.innerText = 'No disponible';
+                if (lanUrl) lanUrl.innerText = 'No disponible';
+                if (networkStatus) networkStatus.innerText = 'SIN RED';
+            }
+        }
+
+        /* CONSOLE */
+        function buildMessageHead(label, icon) {
+            return `
+                <div class="msg-head">
+                    <span class="msg-avatar">${icon}</span>
+                    <span>${escapeHtml(label)}</span>
+                    <span class="msg-time">${getTimeString()}</span>
                 </div>
-            </div>
-        `;
-    }
+            `;
+        }
 
-    function handleKey(e) {
-        if (e.key === 'Enter') sendMessage();
-    }
+        function addUserMessage(text) {
+            if (!chatContainer) return;
 
-    document.getElementById('pinInput')?.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') authenticate();
-    });
+            chatContainer.innerHTML += `
+                <div class="message user-msg">
+                    <div class="msg-wrap">
+                        ${buildMessageHead('TÚ', '🧑')}
+                        <div class="msg-bubble">${escapeHtml(text)}</div>
+                    </div>
+                </div>
+            `;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
 
-    setInterval(() => {
-        if (isAuthenticated) loadBatteryStatus();
-    }, 30000);
-</script>
+        function addBotMessage(text, brain, plugin) {
+            if (!chatContainer) return;
+
+            const displayBrain = brain || plugin || 'PEARL';
+            const isCritico = displayBrain === 'critical' || String(displayBrain).toLowerCase().includes('crítico');
+            const tagClass = isCritico ? 'brain-tag critico' : 'brain-tag';
+            const icon = isCritico ? '🖥️' : '💠';
+
+            chatContainer.innerHTML += `
+                <div class="message jarvis-msg">
+                    <div class="msg-wrap">
+                        ${buildMessageHead(displayBrain, icon)}
+                        <div class="msg-bubble">
+                            <span class="${tagClass}">${isCritico ? '⚠' : '⚡'} ${escapeHtml(displayBrain)}</span>
+                            ${escapeHtml(text)}
+                        </div>
+                    </div>
+                </div>
+            `;
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function clearChat() {
+            if (!chatContainer) return;
+
+            chatContainer.innerHTML = `
+                <div class="message jarvis-msg">
+                    <div class="msg-wrap">
+                        ${buildMessageHead('PEARL SYSTEM', '💠')}
+                        <div class="msg-bubble">
+                            <span class="brain-tag">⚡ CORE ONLINE</span>
+                            Consola reiniciada. Lista para nuevas órdenes.
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function handleKey(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            if (!isAuthenticated || !userInput) return;
+
+            const text = userInput.value.trim();
+            if (!text) return;
+
+            addUserMessage(text);
+            userInput.value = '';
+            if (loader) loader.classList.add('active');
+
+            try {
+                const data = await apiFetch('/ask', {
+                    method: 'POST',
+                    body: JSON.stringify({ pregunta: text })
+                });
+
+                addBotMessage(
+                    data.respuesta || data.response || 'Sin respuesta del sistema',
+                    data.cerebro,
+                    data.plugin
+                );
+            } catch (error) {
+                console.error('Error /ask:', error);
+                addBotMessage(`Error de comunicación: ${error.message}`, 'SISTEMA');
+            } finally {
+                if (loader) loader.classList.remove('active');
+                if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }
+
+        /* QUICK COMMANDS */
+        async function sendQuickCommand(text) {
+            if (!isAuthenticated || !text) return;
+
+            addUserMessage(text);
+            if (loader) loader.classList.add('active');
+
+            try {
+                const data = await apiFetch('/ask', {
+                    method: 'POST',
+                    body: JSON.stringify({ pregunta: text })
+                });
+
+                addBotMessage(
+                    data.respuesta || data.response || 'Sin respuesta del sistema',
+                    data.cerebro,
+                    data.plugin
+                );
+            } catch (error) {
+                console.error('Error /ask rápido:', error);
+                addBotMessage(`Error de comunicación: ${error.message}`, 'SISTEMA');
+            } finally {
+                if (loader) loader.classList.remove('active');
+                if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        }
+
+        /* LIGHTS PREMIUM UI */
+        function updateBrightnessLabel(value) {
+            const brightnessValue = document.getElementById('brightnessValue');
+            const miniBrightness = document.getElementById('miniBrightness');
+            if (brightnessValue) brightnessValue.textContent = value;
+            if (miniBrightness) miniBrightness.textContent = value;
+        }
+
+        function setLightMode(mode) {
+            const miniMode = document.getElementById('miniMode');
+            const lightIndicator = document.getElementById('lightIndicator');
+            if (miniMode) miniMode.textContent = mode;
+            if (lightIndicator) {
+                lightIndicator.textContent = mode === 'Off' ? 'IDLE' : 'ACTIVE';
+            }
+        }
+
+        function runScene(command, mode) {
+            setLightMode(mode || 'Custom');
+            sendQuickCommand(command);
+        }
+
+        function applyBrightness() {
+            const slider = document.getElementById('brightnessSlider');
+            if (!slider) return;
+
+            const value = parseInt(slider.value, 10);
+            let command = '';
+            let mode = 'Custom';
+
+            if (value <= 150) {
+                command = 'brillo min';
+                mode = 'Mínimo';
+            } else if (value >= 950) {
+                command = 'brillo max';
+                mode = 'Máximo';
+            } else if (value < 500) {
+                command = 'luz noche';
+                mode = 'Noche';
+            } else if (value < 700) {
+                command = 'luz relax';
+                mode = 'Relax';
+            } else if (value < 900) {
+                command = 'prende la lámpara';
+                mode = 'Normal';
+            } else {
+                command = 'luz lectura';
+                mode = 'Lectura';
+            }
+
+            setLightMode(mode);
+            sendQuickCommand(command);
+        }
+
+        /* MUSIC PREMIUM */
+        function playQuickMusic() {
+            const input = document.getElementById('musicQuickInput');
+            const query = input ? input.value.trim() : '';
+            if (!query) return;
+            sendQuickCommand(`reproduce ${query}`);
+            input.value = '';
+        }
+
+        function setMusicPreset(name) {
+            const input = document.getElementById('musicQuickInput');
+            if (input) {
+                input.value = name;
+            }
+            playQuickMusic();
+        }
+
+        /* ASSERTS */
+        console.assert(typeof authenticate === 'function', 'authenticate debe existir');
+        console.assert(typeof sendMessage === 'function', 'sendMessage debe existir');
+        console.assert(typeof apiFetch === 'function', 'apiFetch debe existir');
+        console.assert(typeof sendQuickCommand === 'function', 'sendQuickCommand debe existir');
+        console.assert(typeof playQuickMusic === 'function', 'playQuickMusic debe existir');
+    </script>
 </body>
 </html>

@@ -17,7 +17,7 @@ def handle(prompt):
         response = requests.post(
             "http://localhost:11434/api/generate",
             json={"model": "qwen2.5:0.5b", "prompt": prompt, "stream": False},
-            timeout=45
+            timeout=240
         )
         if response.status_code == 200:
             return {'respuesta': response.json().get("response", "Error"), 'cerebro': NAME}
