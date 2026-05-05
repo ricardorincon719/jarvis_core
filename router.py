@@ -15,6 +15,12 @@ GLOBAL_STOP_WORDS = {
     "silencio", "callate", "corta", "frena"
 }
 
+MUSIC_CONTROL_WORDS = {
+    "play", "pausa", "reanuda", "reanudar", "continua", "continuar",
+    "siguiente", "next", "anterior", "previo", "previous",
+    "silencio", "sube el volumen", "baja el volumen"
+}
+
 DOMOTICA_WORDS = {
     "luz": 10,
     "luces": 10,
@@ -237,6 +243,23 @@ def is_global_stop(text: str) -> bool:
     return text in GLOBAL_STOP_WORDS
 
 
+def is_music_control(text: str) -> bool:
+    return text in MUSIC_CONTROL_WORDS
+
+
+def prefer_music_plugin(available_plugins: List[str]) -> Optional[str]:
+    last_plugin = get_last_plugin()
+    if last_plugin in {"music_local", "music"} and last_plugin in available_plugins:
+        return last_plugin
+
+    if "music_local" in available_plugins:
+        return "music_local"
+    if "music" in available_plugins:
+        return "music"
+
+    return None
+
+
 # =========================
 # REGLAS
 # =========================
@@ -311,15 +334,20 @@ def route_query(text: str, available_plugins: List[str]) -> str:
     # 1) STOP CONTEXTUAL
     # -------------------------
     if is_global_stop(text):
+        music_plugin = prefer_music_plugin(available_plugins)
+        if music_plugin:
+            return music_plugin
+
         last_plugin = get_last_plugin()
         if last_plugin in available_plugins:
             return last_plugin
 
-        # fallback razonable si no hay contexto
-        if "music_local" in available_plugins:
-            return "music_local"
-        if "music" in available_plugins:
-            return "music"
+    # Controles exactos de la UI de música. Sin esto, "reanuda",
+    # "siguiente" y "anterior" caen por score bajo en local_ia.
+    if is_music_control(text):
+        music_plugin = prefer_music_plugin(available_plugins)
+        if music_plugin:
+            return music_plugin
 
     # -------------------------
     # 2) SCORING
