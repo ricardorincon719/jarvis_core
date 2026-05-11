@@ -12,7 +12,7 @@ import os
 import socket
 from pathlib import Path
 from router import route_query, update_context
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -246,6 +246,67 @@ def ask():
         "cerebro": "Core",
         "sugerencia": "Consulta disponible en: " + ", ".join(list(plugins.keys()))
     })
+
+@app.route("/ask_stream", methods=["POST"])
+def ask_stream():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    data = request.get_json(silent=True) or {}
+    pregunta = (data.get("pregunta") or "").strip()
+
+    if not pregunta:
+        return jsonify({"respuesta": "Mensaje vacío", "cerebro": "Core"}), 400
+
+    print(f"\n📨 Consulta streaming: {pregunta}")
+    print("REMOTE_ADDR:", request.remote_addr)
+    print("HOST:", request.host)
+
+    available_plugins = list(plugins.keys())
+    plugin_name = route_query(pregunta, available_plugins)
+
+    print(f"   🎯 Delegando streaming a: {plugin_name}")
+
+    if plugin_name in plugins:
+        plugin_info = plugins[plugin_name]
+        module = plugin_info["module"]
+
+        try:
+            if hasattr(module, "handle_stream"):
+                update_context(plugin_name, pregunta)
+                return Response(
+                    stream_with_context(module.handle_stream(pregunta)),
+                    mimetype="application/x-ndjson",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "X-Accel-Buffering": "no",
+                    },
+                )
+
+            response = module.handle(pregunta)
+            if not isinstance(response, dict):
+                response = {"respuesta": str(response), "cerebro": plugin_name}
+
+            response["plugin"] = plugin_name
+            response["version"] = plugin_info["version"]
+            update_context(plugin_name, pregunta)
+            return jsonify(response)
+
+        except Exception as e:
+            print(f"   ❌ Error streaming plugin {plugin_name}: {e}")
+            return jsonify({
+                "respuesta": f"Error ejecutando plugin {plugin_name}: {str(e)}",
+                "cerebro": "Core",
+                "plugin": plugin_name
+            }), 500
+
+    print("   ⚠️ Plugin devuelto por router no encontrado")
+    return jsonify({
+        "respuesta": "No sé cómo responder a eso. ¿Puedes reformular?",
+        "cerebro": "Core",
+        "sugerencia": "Consulta disponible en: " + ", ".join(list(plugins.keys()))
+    }), 404
 
 @app.route("/ask_auth", methods=["POST"])
 def ask_auth():

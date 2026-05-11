@@ -64,6 +64,9 @@ def conversational_response(text):
 
     return clean_text
 
+def ndjson_event(event):
+    return json.dumps(event, ensure_ascii=False) + "\n"
+
 def handle(pregunta):
     try:
         # Intentar delegar a orquestador
@@ -96,6 +99,101 @@ def handle(pregunta):
     except Exception as e:
         return fallback_local(pregunta, str(e))
 
+def handle_stream(pregunta):
+    yield ndjson_event({
+        "event": "meta",
+        "status": "streaming",
+        "plugin": "critical",
+        "brain": "orchestrator"
+    })
+
+    try:
+        with requests.post(
+            f"{ORCHESTRATOR_URL}/process",
+            json={"prompt": pregunta, "stream": True},
+            timeout=(5, 240),
+            stream=True
+        ) as response:
+            if response.status_code != 200:
+                yield from fallback_local_stream(pregunta, f"Orchestrator HTTP {response.status_code}")
+                return
+
+            full_response = []
+            buffered_json = False
+            streaming_started = False
+
+            for payload in response.iter_lines(decode_unicode=True):
+                if not payload:
+                    continue
+
+                try:
+                    event = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+
+                event_type = event.get("event")
+
+                if event_type == "meta":
+                    yield ndjson_event({
+                        "event": "meta",
+                        "status": "streaming",
+                        "plugin": "critical",
+                        "brain": event.get("brain", "orchestrator"),
+                        "model": event.get("model")
+                    })
+                    continue
+
+                if event_type == "token":
+                    token = event.get("response", "")
+                    if not token:
+                        continue
+
+                    full_response.append(token)
+                    current = "".join(full_response).lstrip()
+                    if not streaming_started and current.startswith(("{", "[")):
+                        buffered_json = True
+
+                    if not buffered_json:
+                        streaming_started = True
+                        yield ndjson_event({
+                            "event": "token",
+                            "status": "streaming",
+                            "plugin": "critical",
+                            "response": token
+                        })
+                    continue
+
+                if event_type == "done":
+                    final_text = conversational_response(event.get("response") or "".join(full_response))
+                    if buffered_json:
+                        yield ndjson_event({
+                            "event": "token",
+                            "status": "streaming",
+                            "plugin": "critical",
+                            "response": final_text
+                        })
+                    yield ndjson_event({
+                        "event": "done",
+                        "status": "success",
+                        "plugin": "critical",
+                        "brain": event.get("brain", "orchestrator"),
+                        "model": event.get("model"),
+                        "response": final_text,
+                        "time": event.get("time")
+                    })
+                    return
+
+                if event_type == "error":
+                    yield from fallback_local_stream(pregunta, event.get("error", "Error del orquestador"))
+                    return
+
+    except requests.exceptions.Timeout:
+        yield from fallback_local_stream(pregunta, "Timeout conectando con orquestador")
+    except requests.exceptions.ConnectionError:
+        yield from fallback_local_stream(pregunta, "Orquestador no disponible")
+    except Exception as e:
+        yield from fallback_local_stream(pregunta, str(e))
+
 def fallback_local(pregunta, razon=""):
     """
     Fallback: usa primero el plugin local_ia; si no existe, intenta Ollama directo.
@@ -124,6 +222,23 @@ def fallback_local_plugin(pregunta, razon=""):
     except Exception:
         return None
 
+def fallback_local_stream(pregunta, razon=""):
+    try:
+        from branches.local_ia.current.plugin import handle_stream as local_stream
+
+        yield ndjson_event({
+            "event": "meta",
+            "status": "streaming",
+            "plugin": "critical",
+            "brain": "local_ia (fallback)",
+            "fallback_reason": razon
+        })
+        yield from local_stream(pregunta)
+        return
+    except Exception:
+        pass
+
+    yield from fallback_ollama_stream(pregunta, razon)
 
 def fallback_ollama(pregunta, razon=""):
     try:
@@ -152,3 +267,65 @@ def fallback_ollama(pregunta, razon=""):
             "cerebro": "error",
             "status": "failed"
         }
+
+def fallback_ollama_stream(pregunta, razon=""):
+    yield ndjson_event({
+        "event": "meta",
+        "status": "streaming",
+        "plugin": "critical",
+        "brain": "local_ia (fallback)",
+        "fallback_reason": razon
+    })
+
+    try:
+        with requests.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={"model": OLLAMA_MODEL, "prompt": pregunta, "stream": True},
+            timeout=(5, 240),
+            stream=True
+        ) as response:
+            if response.status_code != 200:
+                yield ndjson_event({
+                    "event": "error",
+                    "status": "error",
+                    "plugin": "critical",
+                    "error": f"Fallback local HTTP {response.status_code}. {razon}"
+                })
+                return
+
+            full_response = []
+            for payload in response.iter_lines(decode_unicode=True):
+                if not payload:
+                    continue
+                try:
+                    chunk = json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+
+                token = chunk.get("response", "")
+                if token:
+                    full_response.append(token)
+                    yield ndjson_event({
+                        "event": "token",
+                        "status": "streaming",
+                        "plugin": "critical",
+                        "response": token
+                    })
+
+                if chunk.get("done"):
+                    yield ndjson_event({
+                        "event": "done",
+                        "status": "success",
+                        "plugin": "critical",
+                        "brain": "local_ia (fallback)",
+                        "response": conversational_response("".join(full_response)),
+                        "fallback_reason": razon
+                    })
+                    return
+    except Exception as e:
+        yield ndjson_event({
+            "event": "error",
+            "status": "error",
+            "plugin": "critical",
+            "error": f"{razon}. Error: {str(e)}"
+        })
