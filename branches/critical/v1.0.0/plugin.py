@@ -14,6 +14,56 @@ OLLAMA_MODEL = os.getenv("JARVIS_OLLAMA_MODEL", "qwen2.5:0.5b")
 def can_handle(pregunta):
     return any(t in pregunta.lower() for t in TRIGGERS)
 
+def _as_list(value):
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+def _format_system_status(data):
+    status = data.get("estado_del_sistema")
+    if not isinstance(status, dict):
+        return None
+
+    hechos = _as_list(status.get("hechos"))
+    riesgos = _as_list(status.get("riesgos"))
+    acciones = _as_list(status.get("accion_recomendada"))
+
+    parts = []
+    if hechos:
+        parts.append("Sistema estable: " + " ".join(hechos))
+    if riesgos:
+        parts.append("Riesgos detectados: " + " ".join(riesgos))
+    else:
+        parts.append("No veo riesgos activos.")
+    if acciones:
+        parts.append("Siguiente paso recomendado: " + " ".join(acciones))
+    else:
+        parts.append("No hace falta acción inmediata.")
+
+    return " ".join(parts)
+
+def conversational_response(text):
+    if not isinstance(text, str):
+        return str(text)
+
+    clean_text = text.strip()
+    if not clean_text:
+        return clean_text
+
+    try:
+        data = json.loads(clean_text)
+    except json.JSONDecodeError:
+        return clean_text
+
+    if isinstance(data, dict):
+        formatted = _format_system_status(data)
+        if formatted:
+            return formatted
+
+    return clean_text
+
 def handle(pregunta):
     try:
         # Intentar delegar a orquestador
@@ -28,7 +78,7 @@ def handle(pregunta):
             
             if result.get("status") == "success":
                 return {
-                    "respuesta": result["response"],
+                    "respuesta": conversational_response(result["response"]),
                     "cerebro": f"orchestrator→{result['brain']}→{result['model']}",
                     "tiempo_ms": result.get("time", 0),
                     "status": "delegated"
@@ -65,6 +115,7 @@ def fallback_local_plugin(pregunta, razon=""):
         if not isinstance(resultado, dict):
             resultado = {"respuesta": str(resultado)}
 
+        resultado["respuesta"] = conversational_response(resultado.get("respuesta", ""))
         resultado["cerebro"] = "local_ia (fallback)"
         resultado["status"] = resultado.get("status", "local_fallback")
         resultado["fallback_reason"] = razon
@@ -83,7 +134,7 @@ def fallback_ollama(pregunta, razon=""):
         )
         if response.status_code == 200:
             return {
-                "respuesta": response.json().get("response", "Error"),
+                "respuesta": conversational_response(response.json().get("response", "Error")),
                 "cerebro": "local_ia (fallback)",
                 "status": "local_fallback",
                 "fallback_reason": razon
