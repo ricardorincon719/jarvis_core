@@ -21,6 +21,11 @@ def ndjson_event(event):
 
 def iter_json_objects(payload):
     decoder = json.JSONDecoder()
+    if isinstance(payload, bytes):
+        payload = payload.decode("utf-8", errors="replace")
+    elif not isinstance(payload, str):
+        payload = str(payload)
+
     text = payload.strip()
     index = 0
 
