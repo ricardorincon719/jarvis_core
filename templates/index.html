@@ -1473,7 +1473,7 @@
                 <div class="screen" id="musicScreen">
                     <div class="screen-scroll">
                         <div class="card">
-                            <div class="section-title">Music Engine</div>
+                            <div class="section-title">Sonando ahora</div>
                             <div class="now-playing" id="nowPlayingCard">
                                 <div class="now-playing-art" id="nowPlayingArt">♪</div>
                                 <div class="now-playing-body">
@@ -1485,7 +1485,10 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
 
+                        <div class="card">
+                            <div class="section-title">Music Engine</div>
                             <div class="music-search">
                                 <input type="text" id="musicQuickInput" placeholder="Buscar música o artista...">
                                 <button class="btn btn-primary" onclick="playQuickMusic()">Play</button>
@@ -1711,6 +1714,10 @@
             const screen = document.getElementById(screenId);
             if (screen) screen.classList.add('active');
             if (btn) btn.classList.add('active');
+
+            if (screenId === 'musicScreen') {
+                loadMusicStatus();
+            }
         }
 
         /* AUTH */
