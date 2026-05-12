@@ -22,6 +22,8 @@ MUSIC_CONTROL_WORDS = {
 }
 
 DOMOTICA_WORDS = {
+    "domotica": 12,
+    "domótica": 12,
     "luz": 10,
     "luces": 10,
     "lampara": 10,
@@ -41,6 +43,14 @@ DOMOTICA_WORDS = {
     "temperatura": 7,
     "escena": 8,
     "ambiente": 6,
+    "automatizacion": 8,
+    "automatización": 8,
+    "memoria domotica": 10,
+    "memoria domótica": 10,
+    "patron": 8,
+    "patrón": 8,
+    "patrones": 8,
+    "escenas aprendidas": 10,
     "relax": 5,
     "noche": 5,
     "lectura": 5,
@@ -295,6 +305,9 @@ def score_domotica(text: str) -> int:
     # Reglas fuertes
     if "luz" in text or "lampara" in text or "luces" in text:
         score += 15
+
+    if "domotica" in text and any(x in text for x in ["memoria", "patron", "patrones", "escena", "automatizacion"]):
+        score += 18
 
     # Escenas conocidas
     if ("relax" in text or "noche" in text or "lectura" in text) and (
