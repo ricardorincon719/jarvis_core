@@ -12,6 +12,7 @@ import os
 import re
 import socket
 from pathlib import Path
+from branches.scene_memory import SharedSceneMemory
 from router import route_query, update_context
 from flask import Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
@@ -48,6 +49,7 @@ BRANCHES_DIR = Path(os.getenv("JARVIS_BRANCHES_DIR", str(BASE_DIR / "branches"))
 MANIFEST_FILE = Path(os.getenv("JARVIS_MANIFEST_FILE", str(BASE_DIR / "plugin_manifest.json")))
 plugins = {}
 plugin_errors = {}
+shared_scene_memory = SharedSceneMemory()
 
 COMPOUND_CONNECTOR_RE = re.compile(
     r"\s+(?:y|e|tambien|también|ademas|además|luego|despues|después)\s+"
@@ -256,7 +258,7 @@ def execute_plugin(plugin_name: str, prompt: str):
     return response
 
 
-def execute_compound_dispatch(dispatch):
+def execute_compound_dispatch(dispatch, original_prompt=None):
     steps = []
     ok = True
 
@@ -284,7 +286,7 @@ def execute_compound_dispatch(dispatch):
         for step in steps
     ]
 
-    return {
+    result = {
         "respuesta": " | ".join(respuestas),
         "cerebro": "Core",
         "plugin": "compound",
@@ -292,6 +294,23 @@ def execute_compound_dispatch(dispatch):
         "ok": ok and all(not step.get("error") for step in steps),
         "steps": steps,
     }
+
+    try:
+        scene_memory_result = shared_scene_memory.record_compound_result(
+            original_prompt or " ".join(item.get("prompt", "") for item in dispatch),
+            dispatch,
+            result,
+        )
+        result["scene_memory"] = scene_memory_result
+
+        created = scene_memory_result.get("candidates_created") or []
+        if created:
+            result["respuesta"] += ". Detecte un nuevo patron de escena y lo deje como candidato."
+    except Exception as e:
+        print(f"   ⚠️ Error registrando memoria de escena compuesta: {e}")
+        result["scene_memory"] = {"recorded": False, "error": str(e)}
+
+    return result
 
 
 # ========== RUTAS ==========
@@ -323,7 +342,7 @@ def ask():
         print("   🧩 Comando compuesto:")
         for item in compound_dispatch:
             print(f"      - {item['plugin']}: {item['prompt']}")
-        return jsonify(execute_compound_dispatch(compound_dispatch))
+        return jsonify(execute_compound_dispatch(compound_dispatch, original_prompt=pregunta))
 
     plugin_name = route_query(pregunta, available_plugins)
 
@@ -374,7 +393,7 @@ def ask_stream():
         print("   🧩 Comando compuesto streaming:")
         for item in compound_dispatch:
             print(f"      - {item['plugin']}: {item['prompt']}")
-        return jsonify(execute_compound_dispatch(compound_dispatch))
+        return jsonify(execute_compound_dispatch(compound_dispatch, original_prompt=pregunta))
 
     plugin_name = route_query(pregunta, available_plugins)
 
@@ -484,6 +503,87 @@ def list_plugins():
     })
 
 
+@app.route("/scenes", methods=["GET"])
+def list_shared_scenes():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    status = request.args.get("status")
+    return jsonify({
+        "scenes": shared_scene_memory.list_scenes(status=status),
+        "summary": shared_scene_memory.summary(),
+    })
+
+
+@app.route("/scenes/candidates", methods=["GET"])
+def list_shared_scene_candidates():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    return jsonify({
+        "scenes": shared_scene_memory.list_scenes(status="candidate"),
+    })
+
+
+@app.route("/scenes/events", methods=["GET"])
+def list_shared_scene_events():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    try:
+        limit = int(request.args.get("limit", "50"))
+    except ValueError:
+        limit = 50
+
+    return jsonify({
+        "events": shared_scene_memory.list_events(limit=max(1, min(limit, 200))),
+    })
+
+
+@app.route("/scenes/suggest", methods=["POST"])
+def suggest_shared_scene():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    context = request.get_json(silent=True) or {}
+    suggestion = shared_scene_memory.suggest_scene(context)
+    if not suggestion:
+        return jsonify({
+            "suggestion": None,
+            "requires_confirmation": True,
+        })
+
+    return jsonify(suggestion)
+
+
+@app.route("/scenes/<scene_id>/approve", methods=["POST"])
+def approve_shared_scene(scene_id):
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    scene = shared_scene_memory.update_scene_status(scene_id, "approved")
+    if not scene:
+        return jsonify({"error": "scene_not_found"}), 404
+    return jsonify({"scene": scene})
+
+
+@app.route("/scenes/<scene_id>/reject", methods=["POST"])
+def reject_shared_scene(scene_id):
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    scene = shared_scene_memory.update_scene_status(scene_id, "rejected")
+    if not scene:
+        return jsonify({"error": "scene_not_found"}), 404
+    return jsonify({"scene": scene})
+
+
 @app.route("/health", methods=["GET"])
 def health():
     """Estado del sistema."""
@@ -492,6 +592,7 @@ def health():
         "plugins": len(plugins),
         "versions": {name: info["version"] for name, info in plugins.items()},
         "plugin_errors": plugin_errors,
+        "scene_memory": shared_scene_memory.summary(),
     })
 
 @app.route("/network", methods=["GET"])
