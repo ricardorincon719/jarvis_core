@@ -313,6 +313,42 @@ def execute_compound_dispatch(dispatch, original_prompt=None):
     return result
 
 
+def get_music_status_snapshot():
+    snapshot = {
+        "status": "ok",
+        "active": None,
+        "targets": {},
+    }
+
+    for plugin_name, target in (("music", "laptop"), ("music_local", "cellphone")):
+        if plugin_name not in plugins:
+            continue
+
+        module = plugins[plugin_name]["module"]
+        if not hasattr(module, "status"):
+            continue
+
+        try:
+            data = module.status()
+            if not isinstance(data, dict):
+                data = {"status": "unknown"}
+            data["plugin"] = plugin_name
+            data.setdefault("target", target)
+            snapshot["targets"][target] = data
+
+            if data.get("running") or data.get("playing"):
+                snapshot["active"] = data
+        except Exception as e:
+            snapshot["targets"][target] = {
+                "status": "error",
+                "plugin": plugin_name,
+                "target": target,
+                "error": str(e),
+            }
+
+    return snapshot
+
+
 # ========== RUTAS ==========
 @app.route("/")
 def index():
@@ -501,6 +537,15 @@ def list_plugins():
         ],
         "total": len(plugins),
     })
+
+
+@app.route("/music/status", methods=["GET"])
+def music_status():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    return jsonify(get_music_status_snapshot())
 
 
 @app.route("/scenes", methods=["GET"])

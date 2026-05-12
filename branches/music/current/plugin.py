@@ -15,3 +15,7 @@ def can_handle(pregunta):
 
 def handle(pregunta):
     return _agent.handle(pregunta)
+
+
+def status():
+    return _agent.status()

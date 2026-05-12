@@ -76,7 +76,13 @@ class MusicNodeClient:
     def execute(self, action: str, query: Optional[str] = None) -> Dict:
         if action == "play":
             data = self.post("/play", {"query": query or "music"})
-            return {"respuesta": data.get("message", f"Reproduciendo: {query or 'music'}"), "message": data.get("message")}
+            return {
+                "respuesta": data.get("message", f"Reproduciendo: {query or 'music'}"),
+                "message": data.get("message"),
+                "title": data.get("title"),
+                "query": data.get("query") or query,
+                "status": data,
+            }
         if action == "pause":
             data = self.post("/pause")
             return {"respuesta": data.get("message", "Musica en pausa"), "message": data.get("message")}
@@ -88,14 +94,29 @@ class MusicNodeClient:
             return {"respuesta": data.get("message", "Reproduccion detenida"), "message": data.get("message")}
         if action == "next":
             data = self.post("/next")
-            return {"respuesta": data.get("message", "Siguiente"), "message": data.get("message")}
+            return {
+                "respuesta": data.get("message", "Siguiente"),
+                "message": data.get("message"),
+                "title": data.get("title"),
+                "query": data.get("query"),
+                "status": data,
+            }
         if action == "previous":
             data = self.post("/previous")
-            return {"respuesta": data.get("message", "Anterior"), "message": data.get("message")}
+            return {
+                "respuesta": data.get("message", "Anterior"),
+                "message": data.get("message"),
+                "title": data.get("title"),
+                "query": data.get("query"),
+                "status": data,
+            }
         if action == "status":
             data = self.get("/status")
             return {"respuesta": data.get("message") or "Estado del nodo de musica consultado", "status": data}
         raise ValueError(f"Accion musical no soportada: {action}")
+
+    def status(self) -> Dict:
+        return self.get("/status")
 
 
 class MusicAgent:
@@ -129,6 +150,11 @@ class MusicAgent:
             response.setdefault("debug", {})["memory_error"] = str(exc)
 
         return response
+
+    def status(self) -> Dict:
+        data = self.client.status()
+        data.setdefault("target", "laptop")
+        return data
 
     def build_plan(self, prompt: str) -> Dict:
         text = normalize_text(prompt)

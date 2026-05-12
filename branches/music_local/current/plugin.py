@@ -28,5 +28,9 @@ def handle(pregunta):
     return _agent.handle(pregunta)
 
 
+def status():
+    return _agent.status()
+
+
 def resolve_query(prompt_lower):
     return _agent.resolve_query(prompt_lower)

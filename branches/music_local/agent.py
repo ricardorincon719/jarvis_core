@@ -60,7 +60,7 @@ def has_any(text: str, words: List[str]) -> bool:
     return any(normalize_text(word) in text for word in words)
 
 
-def resolve_stream_url(query, index=1):
+def resolve_track_info(query, index=1):
     cmd = ["yt-dlp", "-f", "bestaudio", "-g", f"ytsearch{index}:{query}"]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
 
@@ -71,10 +71,48 @@ def resolve_stream_url(query, index=1):
     if not lines:
         raise RuntimeError("No se encontro una URL reproducible")
 
-    return lines[-1]
+    return {
+        "url": lines[-1],
+        "title": query,
+        "webpage_url": None,
+        "duration": None,
+        "thumbnail": None,
+    }
 
 
-def save_state(pid=None, query=None, url=None, index=1, paused=False):
+def resolve_stream_url(query, index=1):
+    return resolve_track_info(query, index)["url"]
+
+
+def resolve_track(query, index=1):
+    cmd = ["yt-dlp", "-f", "bestaudio", "--dump-json", f"ytsearch{index}:{query}"]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+
+    if result.returncode != 0:
+        return resolve_track_info(query, index)
+
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    if not lines:
+        return resolve_track_info(query, index)
+
+    try:
+        info = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return resolve_track_info(query, index)
+
+    if not info.get("url"):
+        return resolve_track_info(query, index)
+
+    return {
+        "url": info.get("url"),
+        "title": info.get("title") or query,
+        "webpage_url": info.get("webpage_url") or info.get("original_url"),
+        "duration": info.get("duration"),
+        "thumbnail": info.get("thumbnail"),
+    }
+
+
+def save_state(pid=None, query=None, url=None, index=1, paused=False, title=None, webpage_url=None, duration=None, thumbnail=None):
     data = {
         "pid": pid,
         "query": query,
@@ -82,6 +120,10 @@ def save_state(pid=None, query=None, url=None, index=1, paused=False):
         "index": index,
         "paused": paused,
         "time": int(time.time()),
+        "title": title,
+        "webpage_url": webpage_url,
+        "duration": duration,
+        "thumbnail": thumbnail,
     }
     try:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -141,6 +183,10 @@ def pause_player():
         url=state.get("url"),
         index=state.get("index", 1),
         paused=True,
+        title=state.get("title"),
+        webpage_url=state.get("webpage_url"),
+        duration=state.get("duration"),
+        thumbnail=state.get("thumbnail"),
     )
     return True
 
@@ -160,21 +206,35 @@ def resume_player():
         url=state.get("url"),
         index=state.get("index", 1),
         paused=False,
+        title=state.get("title"),
+        webpage_url=state.get("webpage_url"),
+        duration=state.get("duration"),
+        thumbnail=state.get("thumbnail"),
     )
     return True
 
 
 def play_query(query, index=1):
-    url = resolve_stream_url(query, index)
+    track = resolve_track(query, index)
 
     proc = subprocess.Popen(
-        ["mpv", "--no-video", url],
+        ["mpv", "--no-video", track["url"]],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
 
-    save_state(pid=proc.pid, query=query, url=url, index=index, paused=False)
-    return url
+    save_state(
+        pid=proc.pid,
+        query=query,
+        url=track["url"],
+        index=index,
+        paused=False,
+        title=track.get("title"),
+        webpage_url=track.get("webpage_url"),
+        duration=track.get("duration"),
+        thumbnail=track.get("thumbnail"),
+    )
+    return track["url"]
 
 
 def replay_saved(delta=0):
@@ -393,7 +453,14 @@ class MusicLocalAgent:
 
             stop_player()
             play_query(query, index)
-            return {"respuesta": f"Reproduciendo: {query}", "cerebro": "MusicLocalAgent"}
+            state = load_state()
+            title = state.get("title") or query
+            return {
+                "respuesta": f"Reproduciendo: {title}",
+                "cerebro": "MusicLocalAgent",
+                "title": title,
+                "query": query,
+            }
 
         if action_type == "pause":
             if pause_player():
@@ -424,6 +491,23 @@ class MusicLocalAgent:
             return {"respuesta": adjust_volume(-1), "cerebro": "MusicLocalAgent"}
 
         raise ValueError(f"Accion musical local no soportada: {action_type}")
+
+    def status(self) -> Dict:
+        state = load_state()
+        running = pid_is_running(state.get("pid"))
+        return {
+            "status": "ok",
+            "target": "cellphone",
+            "running": running,
+            "playing": running and not bool(state.get("paused")),
+            "paused": bool(state.get("paused")),
+            "query": state.get("query"),
+            "index": state.get("index"),
+            "title": state.get("title") or state.get("query"),
+            "webpage_url": state.get("webpage_url"),
+            "duration": state.get("duration"),
+            "thumbnail": state.get("thumbnail"),
+        }
 
     def resolve_query(self, text: str) -> str:
         for preset, query in PRESETS.items():
