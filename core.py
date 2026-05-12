@@ -9,6 +9,7 @@ import importlib
 import hashlib
 import ipaddress
 import os
+import re
 import socket
 from pathlib import Path
 from router import route_query, update_context
@@ -47,6 +48,14 @@ BRANCHES_DIR = Path(os.getenv("JARVIS_BRANCHES_DIR", str(BASE_DIR / "branches"))
 MANIFEST_FILE = Path(os.getenv("JARVIS_MANIFEST_FILE", str(BASE_DIR / "plugin_manifest.json")))
 plugins = {}
 plugin_errors = {}
+
+COMPOUND_CONNECTOR_RE = re.compile(
+    r"\s+(?:y|e|tambien|también|ademas|además|luego|despues|después)\s+"
+    r"(?=(?:prende|enciende|apaga|apagar|encender|reproduce|reproducir|pon|play|"
+    r"pausa|reanuda|continua|activa|activar|restaurar|deshacer|estado|luz|"
+    r"lampara|lámpara|domotica|domótica|musica|música)\b)",
+    re.IGNORECASE,
+)
 
 
 def running_in_termux() -> bool:
@@ -187,6 +196,104 @@ def load_plugins():
     print(f"\n📊 Total plugins cargados: {len(plugins)}")
 
 
+def plugin_domain(plugin_name: str) -> str:
+    if plugin_name in {"music", "music_local"}:
+        return "music"
+    return plugin_name
+
+
+def split_compound_prompt(prompt: str):
+    parts = [
+        part.strip(" ,.;")
+        for part in COMPOUND_CONNECTOR_RE.split(prompt or "")
+        if part.strip(" ,.;")
+    ]
+    return parts if len(parts) > 1 else []
+
+
+def build_compound_dispatch(prompt: str, available_plugins):
+    parts = split_compound_prompt(prompt)
+    if len(parts) < 2:
+        return []
+
+    dispatch = []
+    domains = set()
+
+    for part in parts:
+        plugin_name = route_query(part, available_plugins)
+        domain = plugin_domain(plugin_name)
+
+        if plugin_name not in plugins:
+            return []
+        if domain not in {"music", "domotica"}:
+            return []
+
+        dispatch.append({
+            "prompt": part,
+            "plugin": plugin_name,
+            "domain": domain,
+        })
+        domains.add(domain)
+
+    if len(dispatch) < 2 or len(domains) < 2:
+        return []
+
+    return dispatch
+
+
+def execute_plugin(plugin_name: str, prompt: str):
+    plugin_info = plugins[plugin_name]
+    module = plugin_info["module"]
+
+    response = module.handle(prompt)
+
+    if not isinstance(response, dict):
+        response = {"respuesta": str(response), "cerebro": plugin_name}
+
+    response["plugin"] = plugin_name
+    response["version"] = plugin_info["version"]
+    update_context(plugin_name, prompt)
+    return response
+
+
+def execute_compound_dispatch(dispatch):
+    steps = []
+    ok = True
+
+    for item in dispatch:
+        plugin_name = item["plugin"]
+        prompt = item["prompt"]
+
+        try:
+            response = execute_plugin(plugin_name, prompt)
+            response["compound_prompt"] = prompt
+            steps.append(response)
+        except Exception as e:
+            ok = False
+            print(f"   ❌ Error en paso compuesto {plugin_name}: {e}")
+            steps.append({
+                "respuesta": f"Error ejecutando {plugin_name}: {str(e)}",
+                "cerebro": "Core",
+                "plugin": plugin_name,
+                "compound_prompt": prompt,
+                "error": str(e),
+            })
+
+    respuestas = [
+        str(step.get("respuesta") or step.get("message") or step.get("plugin"))
+        for step in steps
+    ]
+
+    return {
+        "respuesta": " | ".join(respuestas),
+        "cerebro": "Core",
+        "plugin": "compound",
+        "compound": True,
+        "ok": ok and all(not step.get("error") for step in steps),
+        "steps": steps,
+    }
+
+
 # ========== RUTAS ==========
 @app.route("/")
 def index():
@@ -210,6 +317,14 @@ def ask():
     print("HOST:", request.host)
 
     available_plugins = list(plugins.keys())
+    compound_dispatch = build_compound_dispatch(pregunta, available_plugins)
+
+    if compound_dispatch:
+        print("   🧩 Comando compuesto:")
+        for item in compound_dispatch:
+            print(f"      - {item['plugin']}: {item['prompt']}")
+        return jsonify(execute_compound_dispatch(compound_dispatch))
+
     plugin_name = route_query(pregunta, available_plugins)
 
     print(f"   🎯 Delegando a: {plugin_name}")
@@ -219,18 +334,7 @@ def ask():
         module = plugin_info["module"]
 
         try:
-            response = module.handle(pregunta)
-
-            if not isinstance(response, dict):
-                response = {"respuesta": str(response), "cerebro": plugin_name}
-
-            response["plugin"] = plugin_name
-            response["version"] = plugin_info["version"]
-
-            # Guarda contexto para comandos como "stop"
-            update_context(plugin_name, pregunta)
-
-            return jsonify(response)
+            return jsonify(execute_plugin(plugin_name, pregunta))
 
         except Exception as e:
             print(f"   ❌ Error en plugin {plugin_name}: {e}")
@@ -264,6 +368,14 @@ def ask_stream():
     print("HOST:", request.host)
 
     available_plugins = list(plugins.keys())
+    compound_dispatch = build_compound_dispatch(pregunta, available_plugins)
+
+    if compound_dispatch:
+        print("   🧩 Comando compuesto streaming:")
+        for item in compound_dispatch:
+            print(f"      - {item['plugin']}: {item['prompt']}")
+        return jsonify(execute_compound_dispatch(compound_dispatch))
+
     plugin_name = route_query(pregunta, available_plugins)
 
     print(f"   🎯 Delegando streaming a: {plugin_name}")
