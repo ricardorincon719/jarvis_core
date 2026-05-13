@@ -841,6 +841,62 @@
             gap: 8px;
         }
 
+        .active-lights-grid {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 10px;
+        }
+
+        .light-device-card {
+            display: grid;
+            gap: 10px;
+            padding: 13px;
+            border-radius: 18px;
+            border: 1px solid rgba(103, 227, 255, 0.14);
+            background:
+                linear-gradient(145deg, rgba(103, 227, 255, 0.08), rgba(255,255,255,0.02)),
+                rgba(255,255,255,0.025);
+        }
+
+        .light-device-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .light-device-title {
+            font-size: 0.95rem;
+            font-weight: 900;
+            color: var(--text-main);
+            overflow-wrap: anywhere;
+        }
+
+        .light-device-subtitle {
+            margin-top: 4px;
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            overflow-wrap: anywhere;
+        }
+
+        .light-device-controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 7px;
+        }
+
+        .light-device-controls.scenes {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .light-device-controls .btn {
+            min-height: 40px;
+            padding: 8px 9px;
+            font-size: 0.76rem;
+        }
+
         .music-search {
             display: grid;
             grid-template-columns: 1fr auto;
@@ -1184,7 +1240,7 @@
             backdrop-filter: blur(16px);
             border-top: 1px solid rgba(103, 227, 255, 0.12);
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: repeat(4, 1fr);
             gap: 8px;
             align-items: center;
             z-index: 999;
@@ -1220,6 +1276,97 @@
 
         .nav-btn:hover {
             transform: translateY(-1px);
+        }
+
+        .network-card {
+            margin-bottom: 12px;
+            padding: 14px;
+            border-radius: 22px;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015)),
+                var(--bg-card);
+            border: 1px solid var(--line-soft);
+            box-shadow: var(--shadow-card);
+            backdrop-filter: blur(14px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .network-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(103,227,255,0.04), transparent 45%, rgba(255,255,255,0.015));
+            pointer-events: none;
+        }
+
+        .network-head {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .network-title {
+            color: var(--accent-primary);
+            font-size: 0.72rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            font-weight: 900;
+        }
+
+        .network-badge {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(103, 227, 255, 0.08);
+            border: 1px solid rgba(103, 227, 255, 0.18);
+            color: var(--accent-primary);
+            font-size: 0.64rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            white-space: nowrap;
+        }
+
+        .network-grid {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 8px;
+        }
+
+        .network-item {
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.025);
+            border: 1px solid rgba(103, 227, 255, 0.08);
+        }
+
+        .network-label {
+            color: var(--text-dim);
+            font-size: 0.62rem;
+            text-transform: uppercase;
+            letter-spacing: 0.10em;
+            font-weight: 800;
+            margin-bottom: 4px;
+        }
+
+        .network-value {
+            color: var(--text-main);
+            font-size: 0.84rem;
+            font-weight: 900;
+            word-break: break-all;
+        }
+
+        .network-value.local {
+            color: var(--accent-secondary);
+        }
+
+        .network-value.lan {
+            color: var(--accent-primary);
         }
 
         @media (max-width: 760px) {
@@ -1423,31 +1570,12 @@
                 <!-- LUCES -->
                 <div class="screen active" id="lightsScreen">
                     <div class="screen-scroll">
-
-                        <div class="network-card">
-                            <div class="network-head">
-                                <div class="network-title">Acceso de Red</div>
-                                <div class="network-badge" id="networkStatus">Detectando...</div>
-                            </div>
-
-                            <div class="network-grid">
-                                <div class="network-item">
-                                    <div class="network-label">Acceso local</div>
-                                    <div class="network-value local" id="localUrl">http://127.0.0.1:5004</div>
-                                </div>
-
-                                <div class="network-item">
-                                    <div class="network-label">IP LAN actual</div>
-                                    <div class="network-value lan" id="lanIp">Detectando...</div>
-                                </div>
-
-                                <div class="network-item">
-                                    <div class="network-label">Acceso desde otros dispositivos</div>
-                                    <div class="network-value lan" id="lanUrl">Detectando...</div>
-                                </div>
-                            </div>
-                        </div>
                  
+                        <div class="card">
+                            <div class="section-title">Lámparas activas</div>
+                            <div class="active-lights-grid" id="activeLightsGrid"></div>
+                        </div>
+
                         <div class="card">
                             <div class="section-title">Lighting Hub</div>
                             <div class="hero-light">
@@ -1639,6 +1767,35 @@
                     </div>
                 </div>
 
+                <!-- RED -->
+                <div class="screen" id="networkScreen">
+                    <div class="screen-scroll">
+                        <div class="network-card">
+                            <div class="network-head">
+                                <div class="network-title">Acceso de Red</div>
+                                <div class="network-badge" id="networkStatus">Detectando...</div>
+                            </div>
+
+                            <div class="network-grid">
+                                <div class="network-item">
+                                    <div class="network-label">Acceso local</div>
+                                    <div class="network-value local" id="localUrl">http://127.0.0.1:5004</div>
+                                </div>
+
+                                <div class="network-item">
+                                    <div class="network-label">IP LAN actual</div>
+                                    <div class="network-value lan" id="lanIp">Detectando...</div>
+                                </div>
+
+                                <div class="network-item">
+                                    <div class="network-label">Acceso desde otros dispositivos</div>
+                                    <div class="network-value lan" id="lanUrl">Detectando...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- CONSOLA -->
                 <div class="screen" id="consoleScreen">
                     <div class="console-layout">
@@ -1689,6 +1846,10 @@
                 <button class="nav-btn" data-screen="musicScreen" onclick="switchScreen('musicScreen', this)">
                     <span class="icon">🎵</span>
                     <span>Música</span>
+                </button>
+                <button class="nav-btn" data-screen="networkScreen" onclick="switchScreen('networkScreen', this)">
+                    <span class="icon">🌐</span>
+                    <span>Red</span>
                 </button>
                 <button class="nav-btn" data-screen="consoleScreen" onclick="switchScreen('consoleScreen', this)">
                     <span class="icon">💬</span>
@@ -1821,6 +1982,9 @@
             }
             if (screenId === 'lightsScreen') {
                 loadDeviceRegistry();
+            }
+            if (screenId === 'networkScreen') {
+                loadNetworkInfo();
             }
         }
 
@@ -2019,6 +2183,86 @@
             if (el) el.textContent = text;
         }
 
+        function normalizeDeviceText(text) {
+            return String(text || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9_ ]+/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function deviceTargetPhrase(name, cfg) {
+            const nameText = normalizeDeviceText(name);
+            const labelText = normalizeDeviceText(cfg?.label);
+            const roomText = normalizeDeviceText(cfg?.room);
+            const combined = `${nameText} ${labelText}`;
+
+            if (combined.includes('sala')) return 'sala';
+            if (combined.includes('quarto') || combined.includes('cuarto')) return 'cuarto';
+            if (roomText && !['sin_asignar', 'sin sala'].includes(roomText)) return roomText;
+
+            const parts = nameText.split('_').filter(part => part && !['lamp', 'light', 'tuya'].includes(part));
+            return parts[0] || labelText || nameText;
+        }
+
+        function commandForDevice(baseCommand, name, cfg) {
+            const target = deviceTargetPhrase(name, cfg);
+            return target ? `${baseCommand} ${target}` : baseCommand;
+        }
+
+        function renderActiveLights(devices) {
+            const grid = document.getElementById('activeLightsGrid');
+            if (!grid) return;
+
+            const entries = Object.entries(devices || {})
+                .filter(([, cfg]) => cfg && cfg.enabled !== false && (cfg.driver === 'tuya_light' || cfg.type === 'light'));
+
+            if (!entries.length) {
+                grid.innerHTML = '<div class="device-status">No hay lámparas activas registradas.</div>';
+                return;
+            }
+
+            grid.innerHTML = entries.map(([name, cfg]) => {
+                const label = cfg.label || name;
+                const target = deviceTargetPhrase(name, cfg);
+                const statusLabel = cfg.has_local_key === false ? 'SIN KEY' : 'ACTIVA';
+                const cmd = (base) => commandForDevice(base, name, cfg);
+                const enc = (base) => encodeURIComponent(cmd(base));
+
+                return `
+                    <div class="light-device-card">
+                        <div class="light-device-top">
+                            <div>
+                                <div class="light-device-title">${escapeHtml(label)}</div>
+                                <div class="light-device-subtitle">${escapeHtml(target || 'sin sala')} · ${escapeHtml(cfg.ip || 'sin IP')}</div>
+                            </div>
+                            <div class="device-badge">${statusLabel}</div>
+                        </div>
+                        <div class="light-device-controls">
+                            <button class="btn btn-primary" onclick="runEncodedScene('${enc('prende lámpara')}', 'Normal')">On</button>
+                            <button class="btn btn-danger" onclick="runEncodedScene('${enc('apaga lámpara')}', 'Off')">Off</button>
+                            <button class="btn" onclick="sendEncodedQuickCommand('${enc('estado lámpara')}')">Estado</button>
+                        </div>
+                        <div class="light-device-controls scenes">
+                            <button class="btn" onclick="runEncodedScene('${enc('luz normal')}', 'Normal')">Normal</button>
+                            <button class="btn" onclick="runEncodedScene('${enc('luz lectura')}', 'Lectura')">Lectura</button>
+                            <button class="btn" onclick="runEncodedScene('${enc('luz relax')}', 'Relax')">Relax</button>
+                            <button class="btn" onclick="runEncodedScene('${enc('luz noche')}', 'Noche')">Noche</button>
+                            <button class="btn" onclick="runEncodedScene('${enc('luz cálida')}', 'Cálida')">Cálida</button>
+                            <button class="btn" onclick="runEncodedScene('${enc('luz fría')}', 'Fría')">Fría</button>
+                        </div>
+                        <div class="light-device-controls">
+                            <button class="btn color-red" onclick="runEncodedScene('${enc('luz rojo')}', 'Rojo')">Rojo</button>
+                            <button class="btn color-blue" onclick="runEncodedScene('${enc('luz azul')}', 'Azul')">Azul</button>
+                            <button class="btn color-green" onclick="runEncodedScene('${enc('luz verde')}', 'Verde')">Verde</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
         function renderDevices(devices) {
             const list = document.getElementById('deviceList');
             if (!list) return;
@@ -2084,6 +2328,7 @@
                     apiFetch('/devices/candidates')
                 ]);
                 renderDevices(devicesData.devices || {});
+                renderActiveLights(devicesData.devices || {});
                 renderDeviceCandidates(candidatesData.candidates || []);
                 const pending = (candidatesData.candidates || []).length;
                 setDeviceStatus(pending ? `${pending} dispositivo(s) pendiente(s) de aprobación.` : 'Sin candidatos pendientes.');
@@ -2386,6 +2631,14 @@
         function runScene(command, mode) {
             setLightMode(mode || 'Custom');
             sendQuickCommand(command);
+        }
+
+        function runEncodedScene(encodedCommand, mode) {
+            runScene(decodeURIComponent(encodedCommand), mode);
+        }
+
+        function sendEncodedQuickCommand(encodedCommand) {
+            sendQuickCommand(decodeURIComponent(encodedCommand));
         }
 
         function applyBrightness() {
