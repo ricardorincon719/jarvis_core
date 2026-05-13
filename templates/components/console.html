@@ -1,0 +1,40 @@
+                <!-- CONSOLA -->
+                <div class="screen" id="consoleScreen">
+                    <div class="console-layout">
+                        <div id="chat-container">
+                            <div class="message jarvis-msg">
+                                <div class="msg-wrap">
+                                    <div class="msg-head">
+                                        <span class="msg-avatar">💠</span>
+                                        <span>PEARL SYSTEM</span>
+                                        <span class="msg-time" id="bootTime">--:--</span>
+                                    </div>
+                                    <div class="msg-bubble">
+                                        <span class="brain-tag">⚡ CORE ONLINE</span>
+                                        Bienvenido a PEARL HOME. Todo listo para controlar tu entorno.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="loading" id="loader">
+                            <div class="typing-box">
+                                <span>Procesando consulta</span>
+                                <div class="typing-dots">
+                                    <span></span><span></span><span></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="input-area">
+                            <input
+                                type="text"
+                                id="userInput"
+                                placeholder="Escribe una orden..."
+                                onkeypress="handleKey(event)"
+                            >
+                            <button id="sendBtn" onclick="sendMessage()">▶</button>
+                            <button id="clearBtn" onclick="clearChat()">🗑</button>
+                        </div>
+                    </div>
+                </div>

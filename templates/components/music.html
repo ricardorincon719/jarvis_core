@@ -1,0 +1,68 @@
+                <!-- MUSICA -->
+                <div class="screen" id="musicScreen">
+                    <div class="screen-scroll">
+                        <div class="card">
+                            <div class="section-title">Sonando ahora</div>
+                            <div class="now-playing" id="nowPlayingCard">
+                                <div class="now-playing-art" id="nowPlayingArt">♪</div>
+                                <div class="now-playing-body">
+                                    <div class="now-playing-kicker" id="nowPlayingKicker">Sin reproducción activa</div>
+                                    <div class="now-playing-title" id="nowPlayingTitle">Nada sonando ahora</div>
+                                    <div class="now-playing-meta">
+                                        <span class="now-playing-badge" id="nowPlayingTarget">--</span>
+                                        <span id="nowPlayingQuery">Esperando música</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Music Engine</div>
+                            <div class="music-search">
+                                <input type="text" id="musicQuickInput" placeholder="Buscar música o artista...">
+                                <button class="btn btn-primary" onclick="playQuickMusic()">Play</button>
+                            </div>
+
+                            <div class="music-pills">
+                                <button class="pill-btn" onclick="setMusicPreset('lofi')">Lofi</button>
+                                <button class="pill-btn" onclick="setMusicPreset('synthwave')">Synthwave</button>
+                                <button class="pill-btn" onclick="setMusicPreset('jazz suave')">Jazz</button>
+                                <button class="pill-btn" onclick="setMusicPreset('música relajante')">Relax</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Controles</div>
+                            <div class="grid-2">
+                                <button class="btn" onclick="sendQuickCommand('play')">▶ Play</button>
+                                <button class="btn" onclick="sendQuickCommand('pausa')">⏸ Pausa</button>
+                                <button class="btn" onclick="sendQuickCommand('reanuda')">⏯ Reanudar</button>
+                                <button class="btn" onclick="sendQuickCommand('stop')">⏹ Stop</button>
+                                <button class="btn" onclick="sendQuickCommand('siguiente')">⏭ Siguiente</button>
+                                <button class="btn" onclick="sendQuickCommand('anterior')">⏮ Anterior</button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Atajos</div>
+                            <div class="grid-2">
+                                <button class="btn scene-btn" onclick="sendQuickCommand('sube el volumen')">
+                                    <strong>🔊 Volumen +</strong>
+                                    <span>Aumentar audio</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="sendQuickCommand('baja el volumen')">
+                                    <strong>🔉 Volumen -</strong>
+                                    <span>Reducir audio</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="sendQuickCommand('silencio')">
+                                    <strong>🔇 Silencio</strong>
+                                    <span>Mute temporal</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="sendQuickCommand('pon algo relajante')">
+                                    <strong>✨ Ambiente</strong>
+                                    <span>Música suave</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>

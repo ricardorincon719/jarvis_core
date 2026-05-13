@@ -1,0 +1,137 @@
+                <!-- LUCES -->
+                <div class="screen active" id="lightsScreen">
+                    <div class="screen-scroll">
+                 
+                        <div class="card">
+                            <div class="section-title">Lámparas</div>
+                            <div class="light-selector" id="lightSelector"></div>
+                            <div class="light-control-panel" id="lightControlPanel"></div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Dispositivos Tuya</div>
+                            <div class="device-toolbar">
+                                <button class="btn btn-primary" onclick="discoverDevices()">Descubrir</button>
+                                <button class="btn" onclick="loadDeviceRegistry()">Actualizar</button>
+                            </div>
+                            <div class="device-status" id="deviceStatus">Registro listo.</div>
+                            <div class="device-list" id="deviceList"></div>
+                            <div class="device-list" id="deviceCandidates"></div>
+                        </div>
+
+                        <div class="card">
+                            <button class="btn legacy-toggle" onclick="toggleLegacyControls()">
+                                <span>Controles clásicos</span>
+                                <span id="legacyToggleIcon">Mostrar</span>
+                            </button>
+                            <div class="legacy-controls" id="legacyControls">
+                                <div class="section-title">Lighting Hub</div>
+                                <div class="hero-light">
+                                    <div class="hero-light-left">
+                                        <div class="hero-kicker">Ambiente principal</div>
+                                        <div class="hero-title">Lámpara Cuarto</div>
+                                        <div class="hero-desc">Escenas, color y brillo inteligente</div>
+                                    </div>
+                                    <div class="hero-side">
+                                        <div class="hero-pill">HOME</div>
+                                        <div class="hero-indicator" id="lightIndicator">READY</div>
+                                    </div>
+                                </div>
+
+                                <div class="stat-mini-grid">
+                                    <div class="mini-panel">
+                                        <div class="mini-panel-label">Brillo</div>
+                                        <div class="mini-panel-value" id="miniBrightness">800</div>
+                                    </div>
+                                    <div class="mini-panel">
+                                        <div class="mini-panel-label">Modo</div>
+                                        <div class="mini-panel-value" id="miniMode">Normal</div>
+                                    </div>
+                                </div>
+
+                                <div class="card">
+                                    <div class="section-title">Encendido</div>
+                                    <div class="grid-2">
+                                        <button class="btn btn-primary" onclick="runScene('prende la lámpara', 'Normal')">Encender</button>
+                                        <button class="btn btn-danger" onclick="runScene('apaga la lámpara', 'Off')">Apagar</button>
+                                    </div>
+                                </div>
+
+                                <div class="card">
+                                    <div class="section-title">Brillo</div>
+                                    <div class="range-card">
+                                        <div class="range-head">
+                                            <span>Control táctil premium</span>
+                                            <span id="brightnessValue">800</span>
+                                        </div>
+
+                                        <input
+                                            type="range"
+                                            id="brightnessSlider"
+                                            min="100"
+                                            max="1000"
+                                            step="50"
+                                            value="800"
+                                            oninput="updateBrightnessLabel(this.value)"
+                                        >
+
+                                        <div class="range-footer">
+                                            <span>Bajo</span>
+                                            <span>Medio</span>
+                                            <span>Alto</span>
+                                        </div>
+
+                                        <button class="btn btn-primary" onclick="applyBrightness()">Aplicar brillo</button>
+                                    </div>
+                                </div>
+
+                                <div class="card">
+                                    <div class="section-title">Temperatura</div>
+                                    <div class="grid-2">
+                                        <button class="btn" onclick="runScene('luz cálida', 'Cálida')">Cálida</button>
+                                        <button class="btn" onclick="runScene('luz fría', 'Fría')">Fría</button>
+                                    </div>
+                                </div>
+
+                                <div class="card">
+                                    <div class="section-title">Colores</div>
+                                    <div class="grid-3">
+                                        <button class="btn color-red" onclick="runScene('luz rojo', 'Rojo')">Rojo</button>
+                                        <button class="btn color-blue" onclick="runScene('luz azul', 'Azul')">Azul</button>
+                                        <button class="btn color-green" onclick="runScene('luz verde', 'Verde')">Verde</button>
+                                    </div>
+                                </div>
+
+                        <div class="card">
+                            <div class="section-title">Escenas</div>
+                            <div class="grid-2">
+                                <button class="btn scene-btn" onclick="runScene('prende la lámpara', 'Normal')">
+                                    <strong>⚪ Normal</strong>
+                                    <span>Modo principal</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="runScene('luz lectura', 'Lectura')">
+                                    <strong>📖 Lectura</strong>
+                                    <span>Alta claridad</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="runScene('luz relax', 'Relax')">
+                                    <strong>🧘 Relax</strong>
+                                    <span>Más suave</span>
+                                </button>
+                                <button class="btn scene-btn" onclick="runScene('luz noche', 'Noche')">
+                                    <strong>🌙 Noche</strong>
+                                    <span>Baja intensidad</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="section-title">Control</div>
+                            <div class="grid-2">
+                                <button class="btn" onclick="sendQuickCommand('deshacer')">↩ Deshacer</button>
+                                <button class="btn" onclick="sendQuickCommand('restaurar')">🔄 Restaurar</button>
+                            </div>
+                        </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>

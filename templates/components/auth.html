@@ -1,0 +1,27 @@
+        <!-- AUTH -->
+        <div class="auth-overlay" id="authOverlay">
+            <div class="auth-container">
+                <div class="auth-topline">
+                    <div class="auth-chip">Secure Entry</div>
+                    <div class="auth-chip">v2.0</div>
+                </div>
+
+                <div class="auth-logo">💠</div>
+                <div class="auth-title">PEARL HOME</div>
+                <div class="auth-subtitle">Sistema privado de automatización</div>
+
+                <input
+                    type="password"
+                    class="auth-input"
+                    id="pinInput"
+                    placeholder="••••"
+                    maxlength="4"
+                    autofocus
+                >
+
+                <button class="auth-btn" onclick="authenticate()">Ingresar al sistema</button>
+
+                <div class="auth-error" id="authError">🔒 Acceso denegado</div>
+                <div class="auth-success" id="authSuccess">✅ Acceso concedido</div>
+            </div>
+        </div>
