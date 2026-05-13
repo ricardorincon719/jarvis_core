@@ -72,6 +72,10 @@ def normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
+def normalize_compact(text: str) -> str:
+    return normalize_text(text).replace(" ", "_")
+
+
 def has_any(text: str, words: List[str]) -> bool:
     return any(normalize_text(word) in text for word in words)
 
@@ -415,7 +419,9 @@ class DomoticaAgent:
         for name, cfg in devices.items():
             aliases = {
                 normalize_text(name),
+                normalize_compact(name),
                 normalize_text(str(cfg.get("label") or "")),
+                normalize_compact(str(cfg.get("label") or "")),
                 normalize_text(str(cfg.get("room") or "")),
             }
             aliases.update(part for alias in list(aliases) for part in alias.split("_") if len(part) >= 3)
