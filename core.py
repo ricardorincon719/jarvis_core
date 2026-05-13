@@ -548,6 +548,91 @@ def music_status():
     return jsonify(get_music_status_snapshot())
 
 
+def get_domotica_module():
+    if "domotica" not in plugins:
+        raise RuntimeError("Plugin domotica no cargado")
+    return plugins["domotica"]["module"]
+
+
+@app.route("/devices", methods=["GET"])
+def list_domotica_devices():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    module = get_domotica_module()
+    if not hasattr(module, "list_devices"):
+        return jsonify({"error": "domotica_devices_not_supported"}), 501
+    return jsonify({"devices": module.list_devices()})
+
+
+@app.route("/devices/candidates", methods=["GET"])
+def list_domotica_device_candidates():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    module = get_domotica_module()
+    if not hasattr(module, "list_pending_devices"):
+        return jsonify({"error": "domotica_discovery_not_supported"}), 501
+    return jsonify({"candidates": module.list_pending_devices()})
+
+
+@app.route("/devices/discover", methods=["POST"])
+def discover_domotica_devices():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    data = request.get_json(silent=True) or {}
+    timeout = data.get("timeout")
+    module = get_domotica_module()
+    if not hasattr(module, "discover_devices"):
+        return jsonify({"error": "domotica_discovery_not_supported"}), 501
+    try:
+        return jsonify(module.discover_devices(timeout=timeout))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/devices/candidates/<candidate_id>/approve", methods=["POST"])
+def approve_domotica_device(candidate_id):
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    data = request.get_json(silent=True) or {}
+    module = get_domotica_module()
+    if not hasattr(module, "approve_device_candidate"):
+        return jsonify({"error": "domotica_discovery_not_supported"}), 501
+    try:
+        result = module.approve_device_candidate(
+            candidate_id,
+            local_key=data.get("local_key") or "",
+            name=data.get("name") or "",
+            room=data.get("room") or "",
+        )
+        return jsonify(result)
+    except ValueError as e:
+        status = 400 if str(e) == "local_key_required" else 404
+        return jsonify({"error": str(e)}), status
+
+
+@app.route("/devices/candidates/<candidate_id>/reject", methods=["POST"])
+def reject_domotica_device(candidate_id):
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    module = get_domotica_module()
+    if not hasattr(module, "reject_device_candidate"):
+        return jsonify({"error": "domotica_discovery_not_supported"}), 501
+    try:
+        return jsonify({"candidate": module.reject_device_candidate(candidate_id)})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+
+
 @app.route("/scenes", methods=["GET"])
 def list_shared_scenes():
     acceso = acceso_local_autorizado(request)

@@ -751,6 +751,96 @@
             font-weight: 900;
         }
 
+        .device-toolbar {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .device-status {
+            position: relative;
+            z-index: 1;
+            margin-top: 10px;
+            color: var(--text-dim);
+            font-size: 0.76rem;
+            line-height: 1.45;
+        }
+
+        .device-list {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .device-row {
+            display: grid;
+            gap: 8px;
+            padding: 12px;
+            border-radius: 16px;
+            border: 1px solid var(--line-soft);
+            background: rgba(255,255,255,0.025);
+        }
+
+        .device-row-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: flex-start;
+        }
+
+        .device-name {
+            font-size: 0.86rem;
+            font-weight: 900;
+            color: var(--text-main);
+        }
+
+        .device-meta {
+            margin-top: 3px;
+            font-size: 0.68rem;
+            color: var(--text-dim);
+            overflow-wrap: anywhere;
+        }
+
+        .device-badge {
+            flex-shrink: 0;
+            padding: 5px 8px;
+            border-radius: 999px;
+            font-size: 0.62rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--accent-secondary);
+            border: 1px solid rgba(255, 227, 165, 0.20);
+            background: rgba(255, 227, 165, 0.07);
+        }
+
+        .device-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .device-form input {
+            min-width: 0;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(103, 227, 255, 0.18);
+            color: var(--text-main);
+            padding: 10px 11px;
+            outline: none;
+            border-radius: 14px;
+            font-size: 0.78rem;
+        }
+
+        .device-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
         .music-search {
             display: grid;
             grid-template-columns: 1fr auto;
@@ -1393,6 +1483,17 @@
                         </div>
 
                         <div class="card">
+                            <div class="section-title">Dispositivos Tuya</div>
+                            <div class="device-toolbar">
+                                <button class="btn btn-primary" onclick="discoverDevices()">Descubrir</button>
+                                <button class="btn" onclick="loadDeviceRegistry()">Actualizar</button>
+                            </div>
+                            <div class="device-status" id="deviceStatus">Registro listo.</div>
+                            <div class="device-list" id="deviceList"></div>
+                            <div class="device-list" id="deviceCandidates"></div>
+                        </div>
+
+                        <div class="card">
                             <div class="section-title">Brillo</div>
                             <div class="range-card">
                                 <div class="range-head">
@@ -1645,7 +1746,7 @@
                 if (m === '<') return '&lt;';
                 if (m === '>') return '&gt;';
                 return m;
-            });
+            }).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         function getTimeString() {
@@ -1718,6 +1819,9 @@
             if (screenId === 'musicScreen') {
                 loadMusicStatus();
             }
+            if (screenId === 'lightsScreen') {
+                loadDeviceRegistry();
+            }
         }
 
         /* AUTH */
@@ -1766,6 +1870,7 @@
                         await loadBatteryStatus();
                         await loadNetworkInfo();
                         await loadMusicStatus();
+                        await loadDeviceRegistry();
 
                         setInterval(loadNetworkInfo, 10000);
                         setInterval(loadMusicStatus, 5000);
@@ -1906,6 +2011,136 @@
             } catch (e) {
                 console.error('Error /music/status:', e);
                 setNowPlayingEmpty('Estado musical no disponible');
+            }
+        }
+
+        function setDeviceStatus(text) {
+            const el = document.getElementById('deviceStatus');
+            if (el) el.textContent = text;
+        }
+
+        function renderDevices(devices) {
+            const list = document.getElementById('deviceList');
+            if (!list) return;
+
+            const entries = Object.entries(devices || {});
+            if (!entries.length) {
+                list.innerHTML = '<div class="device-status">No hay dispositivos registrados.</div>';
+                return;
+            }
+
+            list.innerHTML = entries.map(([name, cfg]) => `
+                <div class="device-row">
+                    <div class="device-row-head">
+                        <div>
+                            <div class="device-name">${escapeHtml(cfg.label || name)}</div>
+                            <div class="device-meta">${escapeHtml(cfg.room || 'sin sala')} · ${escapeHtml(cfg.ip || 'sin IP')} · ${escapeHtml(cfg.device_id || 'sin id')}</div>
+                        </div>
+                        <div class="device-badge">${cfg.enabled === false ? 'OFF' : 'ACTIVO'}</div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderDeviceCandidates(candidates) {
+            const container = document.getElementById('deviceCandidates');
+            if (!container) return;
+
+            if (!candidates || !candidates.length) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = candidates.map(candidate => {
+                const id = candidate.candidate_id;
+                return `
+                    <div class="device-row">
+                        <div class="device-row-head">
+                            <div>
+                                <div class="device-name">${escapeHtml(candidate.name_hint || 'Lámpara Tuya')}</div>
+                                <div class="device-meta">${escapeHtml(candidate.ip || 'sin IP')} · ${escapeHtml(candidate.mac || 'sin MAC')} · ${escapeHtml(candidate.device_id || 'sin id')}</div>
+                            </div>
+                            <div class="device-badge">PENDIENTE</div>
+                        </div>
+                        <div class="device-form">
+                            <input id="name-${id}" type="text" placeholder="Nombre" value="${escapeHtml(candidate.name_hint || 'Lámpara Tuya')}">
+                            <input id="room-${id}" type="text" placeholder="Sala" value="cuarto">
+                            <input id="key-${id}" type="password" placeholder="Local key Tuya">
+                            <button class="btn btn-primary" onclick="approveDevice('${id}')">Aprobar</button>
+                        </div>
+                        <div class="device-actions">
+                            <button class="btn" onclick="rejectDevice('${id}')">Rechazar</button>
+                            <button class="btn" onclick="sendQuickCommand('estado de la lámpara')">Probar estado</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function loadDeviceRegistry() {
+            try {
+                const [devicesData, candidatesData] = await Promise.all([
+                    apiFetch('/devices'),
+                    apiFetch('/devices/candidates')
+                ]);
+                renderDevices(devicesData.devices || {});
+                renderDeviceCandidates(candidatesData.candidates || []);
+                const pending = (candidatesData.candidates || []).length;
+                setDeviceStatus(pending ? `${pending} dispositivo(s) pendiente(s) de aprobación.` : 'Sin candidatos pendientes.');
+            } catch (e) {
+                console.error('Error cargando dispositivos:', e);
+                setDeviceStatus(`Dispositivos no disponibles: ${e.message}`);
+            }
+        }
+
+        async function discoverDevices() {
+            setDeviceStatus('Escaneando red local Tuya...');
+            try {
+                const data = await apiFetch('/devices/discover', {
+                    method: 'POST',
+                    body: JSON.stringify({ timeout: 8 })
+                });
+                const summary = data.summary || {};
+                renderDeviceCandidates(data.pending || []);
+                setDeviceStatus(`Detectados: ${summary.total || 0}. Nuevos: ${summary.new || 0}. Registrados: ${summary.known || 0}.`);
+                await loadDeviceRegistry();
+            } catch (e) {
+                console.error('Error descubriendo dispositivos:', e);
+                setDeviceStatus(`Discovery falló: ${e.message}`);
+            }
+        }
+
+        async function approveDevice(candidateId) {
+            const name = document.getElementById(`name-${candidateId}`)?.value || '';
+            const room = document.getElementById(`room-${candidateId}`)?.value || '';
+            const localKey = document.getElementById(`key-${candidateId}`)?.value || '';
+
+            setDeviceStatus('Aprobando dispositivo...');
+            try {
+                await apiFetch(`/devices/candidates/${candidateId}/approve`, {
+                    method: 'POST',
+                    body: JSON.stringify({ name, room, local_key: localKey })
+                });
+                setDeviceStatus('Dispositivo aprobado y registrado.');
+                await loadDeviceRegistry();
+            } catch (e) {
+                console.error('Error aprobando dispositivo:', e);
+                const message = e.message === 'local_key_required'
+                    ? 'Falta la local key de Tuya para controlar este dispositivo localmente.'
+                    : `No se pudo aprobar: ${e.message}`;
+                setDeviceStatus(message);
+            }
+        }
+
+        async function rejectDevice(candidateId) {
+            setDeviceStatus('Rechazando candidato...');
+            try {
+                await apiFetch(`/devices/candidates/${candidateId}/reject`, { method: 'POST' });
+                setDeviceStatus('Candidato rechazado.');
+                await loadDeviceRegistry();
+            } catch (e) {
+                console.error('Error rechazando dispositivo:', e);
+                setDeviceStatus(`No se pudo rechazar: ${e.message}`);
             }
         }
 
@@ -2208,6 +2443,7 @@
         console.assert(typeof apiFetch === 'function', 'apiFetch debe existir');
         console.assert(typeof sendQuickCommand === 'function', 'sendQuickCommand debe existir');
         console.assert(typeof playQuickMusic === 'function', 'playQuickMusic debe existir');
+        console.assert(typeof discoverDevices === 'function', 'discoverDevices debe existir');
     </script>
 </body>
 </html>

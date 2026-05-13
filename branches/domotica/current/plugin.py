@@ -11,7 +11,7 @@ from branches.domotica.agent import (
 )
 
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 DESCRIPTION = "Agente domotico local con memoria persistente y planes validados para PEARL HOME"
 
 _agent = DomoticaAgent()
@@ -51,3 +51,23 @@ def load_last_before_off():
 
 def apply_scene(scene: dict):
     return _agent.service.apply_scene(DEVICE_NAME, scene)
+
+
+def list_devices():
+    return _agent.service.devices()
+
+
+def discover_devices(timeout=None):
+    return _agent.service.discover_devices(timeout=timeout)
+
+
+def list_pending_devices():
+    return _agent.service.pending_devices()
+
+
+def approve_device_candidate(candidate_id: str, local_key: str = "", name: str = "", room: str = ""):
+    return _agent.service.approve_device(candidate_id, local_key=local_key, name=name, room=room)
+
+
+def reject_device_candidate(candidate_id: str):
+    return _agent.service.reject_device(candidate_id)

@@ -35,6 +35,7 @@ SCENE_ALIASES = {
 TRIGGERS = [
     "luz", "luces", "lampara", "lámpara", "bombilla", "foco", "cuarto",
     "domotica", "domótica", "ambiente", "escena", "automatizacion", "automatización",
+    "dispositivo", "dispositivos", "descubrir", "descubre", "buscar", "agregar",
     "lectura", "relax", "noche", "normal", "calida", "cálida", "fria", "fría",
     "rojo", "roja", "verde", "azul", "brillo", "temperatura", "estado",
     "apagar", "apaga", "encender", "enciende", "prender", "prende",
@@ -55,6 +56,9 @@ ALLOWED_ACTIONS = {
     "suggest_scene",
     "approve_scene",
     "reject_scene",
+    "list_devices",
+    "discover_devices",
+    "list_device_candidates",
 }
 
 
@@ -145,6 +149,15 @@ class DomoticaAgent:
 
         if self._is_scene_list_query(text):
             return self._plan("list_scenes", [{"type": "list_scenes"}])
+
+        if self._is_device_list_query(text):
+            return self._plan("list_devices", [{"type": "list_devices"}])
+
+        if self._is_device_candidate_query(text):
+            return self._plan("list_device_candidates", [{"type": "list_device_candidates"}])
+
+        if self._is_discovery_query(text):
+            return self._plan("discover_devices", [{"type": "discover_devices"}])
 
         if has_any(text, ["sugerencia", "sugerir", "que recomiendas", "que sugieres"]):
             return self._plan("suggest_scene", [{"type": "suggest_scene", "intent": "domotica"}])
@@ -248,6 +261,25 @@ class DomoticaAgent:
             if action_type == "list_scenes":
                 scenes = self.memory.list_scenes()
                 return self._scenes_response(scenes, plan)
+
+            if action_type == "list_devices":
+                devices = self.service.devices()
+                return self._devices_response(devices, plan)
+
+            if action_type == "list_device_candidates":
+                candidates = self.service.pending_devices()
+                return self._device_candidates_response(candidates, plan)
+
+            if action_type == "discover_devices":
+                try:
+                    discovery = self.service.discover_devices()
+                except Exception as exc:
+                    return {
+                        "respuesta": f"No pude escanear dispositivos Tuya: {exc}",
+                        "cerebro": "DomoticaAgent",
+                        "debug": {"plan": plan, "error": str(exc)},
+                    }
+                return self._discovery_response(discovery, plan)
 
             if action_type == "suggest_scene":
                 suggestion = self.memory.suggest_scene(action.get("intent"))
@@ -373,6 +405,49 @@ class DomoticaAgent:
             scene["color"] = dps.get("24")
         return scene
 
+    def _devices_response(self, devices: Dict, plan: Dict) -> Dict:
+        total = len(devices)
+        names = ", ".join(
+            cfg.get("label") or name
+            for name, cfg in devices.items()
+        ) or "ninguno"
+        return {
+            "respuesta": f"Dispositivos domoticos registrados: {total}. {names}.",
+            "cerebro": "DomoticaAgent",
+            "debug": {"plan": plan, "devices": devices},
+        }
+
+    def _device_candidates_response(self, candidates: List[Dict], plan: Dict) -> Dict:
+        if not candidates:
+            return {
+                "respuesta": "No hay dispositivos domoticos pendientes de aprobacion.",
+                "cerebro": "DomoticaAgent",
+                "debug": {"plan": plan, "candidates": []},
+            }
+        return {
+            "respuesta": f"Hay {len(candidates)} dispositivo(s) pendiente(s) de aprobacion.",
+            "cerebro": "DomoticaAgent",
+            "requires_confirmation": True,
+            "debug": {"plan": plan, "candidates": candidates},
+        }
+
+    def _discovery_response(self, discovery: Dict, plan: Dict) -> Dict:
+        summary = discovery.get("summary") or {}
+        new_count = int(summary.get("new") or 0)
+        known_count = int(summary.get("known") or 0)
+        if new_count:
+            text = f"Detecte {new_count} dispositivo(s) nuevo(s) Tuya y los deje pendientes de aprobacion."
+        elif known_count:
+            text = f"Detecte {known_count} dispositivo(s) Tuya ya registrado(s)."
+        else:
+            text = "No detecte dispositivos Tuya nuevos en la red local."
+        return {
+            "respuesta": text,
+            "cerebro": "DomoticaAgent",
+            "requires_confirmation": bool(new_count),
+            "debug": {"plan": plan, "discovery": discovery},
+        }
+
     def _validate_plan(self, plan: Dict):
         for action in plan.get("actions") or []:
             action_type = action.get("type")
@@ -440,6 +515,15 @@ class DomoticaAgent:
 
     def _is_scene_list_query(self, text: str) -> bool:
         return has_any(text, ["patrones", "escenas aprendidas", "escenas guardadas", "automatizaciones"])
+
+    def _is_device_list_query(self, text: str) -> bool:
+        return has_any(text, ["dispositivos", "lamparas registradas", "lámparas registradas"]) and has_any(text, ["lista", "muestra", "ver", "registradas"])
+
+    def _is_device_candidate_query(self, text: str) -> bool:
+        return has_any(text, ["pendientes", "candidatos"]) and has_any(text, ["dispositivos", "lamparas", "lámparas", "domotica"])
+
+    def _is_discovery_query(self, text: str) -> bool:
+        return has_any(text, ["descubrir", "descubre", "buscar", "busca", "escanear", "escanea", "detectar", "detecta"]) and has_any(text, ["dispositivo", "dispositivos", "lampara", "lamparas", "lámpara", "lámparas", "tuya"])
 
     def _extract_note(self, text: str) -> Optional[str]:
         for marker in ("recuerda que", "aprende que", "memoriza que"):
