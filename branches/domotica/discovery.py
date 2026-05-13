@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import json
 import os
 import time
@@ -44,8 +45,27 @@ def _now() -> int:
 
 
 def _candidate_id(device_id: str, mac: str, ip: str) -> str:
-    raw = f"{device_id}|{mac}|{ip}".encode("utf-8")
+    stable_id = device_id or mac or ip
+    raw = f"tuya|{stable_id}".encode("utf-8")
     return "tuya_" + hashlib.sha1(raw).hexdigest()[:12]
+
+
+def _is_local_ip(value: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(str(value or "").strip())
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback
+
+
+def _best_ip(current: str, incoming: str) -> str:
+    current = str(current or "").strip()
+    incoming = str(incoming or "").strip()
+    if _is_local_ip(current):
+        return current
+    if _is_local_ip(incoming):
+        return incoming
+    return current or incoming
 
 
 def _existing_indexes(devices: Dict) -> Dict[str, set]:
@@ -57,6 +77,42 @@ def _existing_indexes(devices: Dict) -> Dict[str, set]:
         if cfg.get("mac"):
             macs.add(str(cfg["mac"]).lower())
     return {"ids": ids, "macs": macs}
+
+
+def _known_device_name(candidate: Dict, devices: Dict) -> Optional[str]:
+    device_id = str(candidate.get("device_id") or "").lower()
+    mac = str(candidate.get("mac") or "").lower()
+    for name, cfg in devices.items():
+        if device_id and str(cfg.get("device_id") or "").lower() == device_id:
+            return name
+        if mac and str(cfg.get("mac") or "").lower() == mac:
+            return name
+    return None
+
+
+def _refresh_known_device(candidate: Dict, devices: Dict) -> bool:
+    name = _known_device_name(candidate, devices)
+    if not name:
+        return False
+
+    current = dict(devices.get(name) or {})
+    updated = dict(current)
+    updated["ip"] = _best_ip(current.get("ip"), candidate.get("ip"))
+
+    for key in ("mac", "version", "product_key", "provider", "driver"):
+        if candidate.get(key) not in ("", None):
+            updated[key] = candidate[key]
+    if candidate.get("local_key") and not updated.get("local_key"):
+        updated["local_key"] = candidate["local_key"]
+    if not updated.get("name"):
+        updated["name"] = name
+
+    if updated == current:
+        return False
+
+    upsert_device(name, updated)
+    devices[name] = updated
+    return True
 
 
 def _merge_pending(candidate: Dict, pending: List[Dict]) -> Dict:
@@ -108,7 +164,8 @@ def _candidate_from_cloud(info: Dict, indexes: Dict[str, set], fallback_ip: str 
         return None
 
     mac = str(info.get("mac") or "").strip().lower()
-    ip = str(info.get("ip") or fallback_ip or "").strip()
+    cloud_ip = str(info.get("ip") or "").strip()
+    ip = _best_ip(fallback_ip, cloud_ip)
     known = device_id.lower() in indexes["ids"] or (mac and mac in indexes["macs"])
     local_key = str(info.get("local_key") or "").strip()
 
@@ -161,7 +218,8 @@ def _enrich_candidate_from_cloud(candidate: Dict, cloud, indexes: Dict[str, set]
     if not cloud_candidate:
         return candidate
     merged = dict(candidate)
-    merged.update({k: v for k, v in cloud_candidate.items() if v not in ("", None)})
+    merged.update({k: v for k, v in cloud_candidate.items() if k != "ip" and v not in ("", None)})
+    merged["ip"] = _best_ip(candidate.get("ip"), cloud_candidate.get("ip"))
     if cloud_candidate.get("local_key"):
         merged["local_key"] = cloud_candidate["local_key"]
         merged["has_local_key"] = True
@@ -200,15 +258,24 @@ def _discover_cloud(indexes: Dict[str, set], cloud) -> List[Dict]:
     return discovered
 
 
+def _merge_key(candidate: Dict) -> str:
+    if candidate.get("device_id"):
+        return f"id:{str(candidate['device_id']).lower()}"
+    if candidate.get("mac"):
+        return f"mac:{str(candidate['mac']).lower()}"
+    return f"candidate:{candidate.get('candidate_id')}"
+
+
 def _merge_discovered(existing: List[Dict], incoming: List[Dict]) -> List[Dict]:
-    merged = {item.get("candidate_id"): item for item in existing if item.get("candidate_id")}
+    merged = {_merge_key(item): item for item in existing if item.get("candidate_id")}
     for item in incoming:
-        key = item.get("candidate_id")
+        key = _merge_key(item)
         if not key:
             continue
         current = merged.get(key, {})
         combined = dict(current)
-        combined.update({k: v for k, v in item.items() if v not in ("", None)})
+        combined.update({k: v for k, v in item.items() if k != "ip" and v not in ("", None)})
+        combined["ip"] = _best_ip(current.get("ip"), item.get("ip"))
         if item.get("local_key"):
             combined["local_key"] = item["local_key"]
             combined["has_local_key"] = True
@@ -241,10 +308,14 @@ def discover_tuya_devices(timeout: Optional[int] = None) -> Dict:
         raise RuntimeError("tinytuya_not_installed_and_tuya_cloud_not_configured")
 
     discovered = _merge_discovered(lan_discovered, cloud_discovered)
+    refreshed_known = 0
 
     for candidate in discovered:
         if candidate.get("status") == "pending":
             _merge_pending(candidate, pending)
+        elif candidate.get("status") == "known":
+            if _refresh_known_device(candidate, devices):
+                refreshed_known += 1
 
     _write_pending(pending)
     pending_visible = [
@@ -267,6 +338,7 @@ def discover_tuya_devices(timeout: Optional[int] = None) -> Dict:
             "with_local_key": len([item for item in discovered if item.get("local_key")]),
             "cloud": len(cloud_discovered),
             "lan": len(lan_discovered),
+            "refreshed_known": refreshed_known,
         },
     }
 

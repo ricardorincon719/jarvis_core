@@ -33,7 +33,7 @@ SCENE_ALIASES = {
 }
 
 TRIGGERS = [
-    "luz", "luces", "lampara", "lámpara", "bombilla", "foco", "cuarto",
+    "luz", "luces", "lampara", "lámpara", "bombilla", "foco", "cuarto", "sala",
     "domotica", "domótica", "ambiente", "escena", "automatizacion", "automatización",
     "dispositivo", "dispositivos", "descubrir", "descubre", "buscar", "agregar",
     "lectura", "relax", "noche", "normal", "calida", "cálida", "fria", "fría",
@@ -77,7 +77,7 @@ def has_any(text: str, words: List[str]) -> bool:
 
 
 def is_light_target(text: str) -> bool:
-    return has_any(text, ["luz", "luces", "lampara", "cuarto", "foco", "bombilla"])
+    return has_any(text, ["luz", "luces", "lampara", "cuarto", "sala", "foco", "bombilla"])
 
 
 def is_turn_on_intent(text: str) -> bool:
@@ -143,6 +143,7 @@ class DomoticaAgent:
 
     def build_plan(self, prompt: str) -> Dict:
         text = normalize_text(prompt)
+        device_name = self._resolve_device_name(text)
 
         if self._is_memory_query(text):
             return self._plan("memory_summary", [{"type": "memory_summary"}])
@@ -176,13 +177,13 @@ class DomoticaAgent:
             return self._plan("activate_learned_scene", [{"type": "apply_learned_scene", "query": learned_scene}])
 
         if has_any(text, ["deshacer", "como estaba"]):
-            return self._plan("restore_previous_state", [{"type": "restore_previous_state", "device": DEVICE_NAME}])
+            return self._plan("restore_previous_state", [{"type": "restore_previous_state", "device": device_name}])
 
         if has_any(text, ["restaurar", "ultimo estado", "último estado"]):
-            return self._plan("restore_before_off", [{"type": "restore_before_off", "device": DEVICE_NAME}])
+            return self._plan("restore_before_off", [{"type": "restore_before_off", "device": device_name}])
 
         if "estado" in text and (is_light_target(text) or "domotica" in text):
-            return self._plan("status", [{"type": "status", "device": DEVICE_NAME}])
+            return self._plan("status", [{"type": "status", "device": device_name}])
 
         scene_name, scene = self._parse_scene(text)
         brightness_percent = self._parse_percent(text, ["brillo", "intensidad"])
@@ -195,7 +196,7 @@ class DomoticaAgent:
                 scene["temp"] = percent_to_temp(temp_percent)
             return self._plan(
                 f"apply_{scene_name}",
-                [{"type": "apply_scene", "device": DEVICE_NAME, "scene_name": scene_name, "scene": scene}],
+                [{"type": "apply_scene", "device": device_name, "scene_name": scene_name, "scene": scene}],
             )
 
         if brightness_percent is not None and is_light_target(text):
@@ -207,7 +208,7 @@ class DomoticaAgent:
             }
             return self._plan(
                 "set_brightness",
-                [{"type": "apply_scene", "device": DEVICE_NAME, "scene_name": f"brillo_{brightness_percent}", "scene": scene}],
+                [{"type": "apply_scene", "device": device_name, "scene_name": f"brillo_{brightness_percent}", "scene": scene}],
             )
 
         if temp_percent is not None and is_light_target(text):
@@ -219,14 +220,14 @@ class DomoticaAgent:
             }
             return self._plan(
                 "set_temperature",
-                [{"type": "apply_scene", "device": DEVICE_NAME, "scene_name": f"temperatura_{temp_percent}", "scene": scene}],
+                [{"type": "apply_scene", "device": device_name, "scene_name": f"temperatura_{temp_percent}", "scene": scene}],
             )
 
         if is_turn_off_intent(text) and is_light_target(text):
-            return self._plan("turn_off", [{"type": "turn_off", "device": DEVICE_NAME}])
+            return self._plan("turn_off", [{"type": "turn_off", "device": device_name}])
 
         if is_turn_on_intent(text) and is_light_target(text):
-            return self._plan("turn_on", [{"type": "turn_on", "device": DEVICE_NAME}])
+            return self._plan("turn_on", [{"type": "turn_on", "device": device_name}])
 
         return self._plan("unknown", [])
 
@@ -404,6 +405,26 @@ class DomoticaAgent:
             scene["raw_colour"] = dps.get("24")
             scene["color"] = dps.get("24")
         return scene
+
+    def _resolve_device_name(self, text: str) -> str:
+        try:
+            devices = self.service.devices()
+        except Exception:
+            return DEVICE_NAME
+
+        for name, cfg in devices.items():
+            aliases = {
+                normalize_text(name),
+                normalize_text(str(cfg.get("label") or "")),
+                normalize_text(str(cfg.get("room") or "")),
+            }
+            aliases.update(part for alias in list(aliases) for part in alias.split("_") if len(part) >= 3)
+            aliases.difference_update({"lamp", "light", "tuya", "luz", "luces", "lampara", "foco"})
+            aliases.discard("")
+            if any(alias and alias in text for alias in aliases):
+                return name
+
+        return DEVICE_NAME
 
     def _devices_response(self, devices: Dict, plan: Dict) -> Dict:
         total = len(devices)
