@@ -22,16 +22,25 @@
             return target ? `${baseCommand} ${target}` : baseCommand;
         }
 
-        function preferredLightOrder(entries) {
-            return entries.sort(([a], [b]) => {
-                const rank = (name) => {
-                    const value = normalizeDeviceText(name);
+        function deviceCapabilities(cfg) {
+            const caps = Array.isArray(cfg?.capabilities) ? cfg.capabilities : [];
+            if (caps.length) return caps;
+            if (cfg?.type === 'plug' || String(cfg?.driver || '').includes('plug')) return ['switch'];
+            if (cfg?.type === 'light' || String(cfg?.driver || '').includes('light')) {
+                return ['switch', 'brightness', 'temperature', 'color'];
+            }
+            return ['switch'];
+        }
+
+        function preferredDeviceOrder(entries) {
+            const rank = (name, cfg) => {
+                    const value = `${normalizeDeviceText(name)} ${normalizeDeviceText(cfg?.type)}`;
                     if (value.includes('sala')) return 0;
                     if (value.includes('quarto') || value.includes('cuarto')) return 1;
-                    return 2;
-                };
-                return rank(a) - rank(b) || a.localeCompare(b);
-            });
+                    if (value.includes('plug')) return 2;
+                    return 3;
+            };
+            return entries.sort(([a, cfgA], [b, cfgB]) => rank(a, cfgA) - rank(b, cfgB) || a.localeCompare(b));
         }
 
         function selectLight(name) {
@@ -45,12 +54,12 @@
             if (!selector || !panel) return;
 
             activeLightDevices = devices || {};
-            const entries = preferredLightOrder(Object.entries(activeLightDevices)
-                .filter(([, cfg]) => cfg && cfg.enabled !== false && (cfg.driver === 'tuya_light' || cfg.type === 'light')));
+            const entries = preferredDeviceOrder(Object.entries(activeLightDevices)
+                .filter(([, cfg]) => cfg && cfg.enabled !== false));
 
             if (!entries.length) {
                 selector.innerHTML = '';
-                panel.innerHTML = '<div class="device-status">No hay lámparas activas registradas.</div>';
+                panel.innerHTML = '<div class="device-status">No hay dispositivos activos registrados.</div>';
                 return;
             }
 
@@ -61,10 +70,11 @@
             selector.innerHTML = entries.map(([name, cfg]) => {
                 const label = cfg.label || name;
                 const isActive = name === activeLightName;
+                const type = cfg.type || 'device';
                 return `
                     <button class="light-select-btn ${isActive ? 'active' : ''}" onclick="selectLight('${encodeURIComponent(name)}')">
                         <strong>${escapeHtml(label)}</strong>
-                        <span>${escapeHtml(name)} · ${escapeHtml(cfg.ip || 'sin IP')}</span>
+                        <span>${escapeHtml(type)} · ${escapeHtml(name)} · ${escapeHtml(cfg.ip || 'sin IP')}</span>
                     </button>
                 `;
             }).join('');
@@ -74,33 +84,48 @@
             const target = deviceTargetPhrase(activeLightName, cfg);
             const statusLabel = cfg.has_local_key === false ? 'SIN KEY' : 'ACTIVA';
             const enc = (base) => encodeURIComponent(commandForDevice(base, activeLightName, cfg));
-
-            panel.innerHTML = `
-                <div class="light-panel-top">
-                    <div>
-                        <div class="light-panel-title">${escapeHtml(label)}</div>
-                        <div class="light-panel-subtitle">${escapeHtml(activeLightName)} · ${escapeHtml(cfg.ip || 'sin IP')}</div>
-                    </div>
-                    <div class="device-badge">${statusLabel}</div>
-                </div>
+            const caps = deviceCapabilities(cfg);
+            const has = (cap) => caps.includes(cap);
+            const switchControls = has('switch') ? `
                 <div class="light-panel-controls">
-                    <button class="btn btn-primary" onclick="runEncodedScene('${enc('prende lámpara')}', 'Normal')">Encender</button>
-                    <button class="btn btn-danger" onclick="runEncodedScene('${enc('apaga lámpara')}', 'Off')">Apagar</button>
-                    <button class="btn" onclick="sendEncodedQuickCommand('${enc('estado lámpara')}')">Estado</button>
+                    <button class="btn btn-primary" onclick="runEncodedScene('${enc('prende dispositivo')}', 'On')">Encender</button>
+                    <button class="btn btn-danger" onclick="runEncodedScene('${enc('apaga dispositivo')}', 'Off')">Apagar</button>
+                    <button class="btn" onclick="sendEncodedQuickCommand('${enc('estado dispositivo')}')">Estado</button>
                 </div>
+            ` : '';
+            const sceneControls = (has('brightness') || has('temperature')) ? `
                 <div class="light-panel-controls scenes">
                     <button class="btn" onclick="runEncodedScene('${enc('luz normal')}', 'Normal')">Normal</button>
                     <button class="btn" onclick="runEncodedScene('${enc('luz lectura')}', 'Lectura')">Lectura</button>
                     <button class="btn" onclick="runEncodedScene('${enc('luz relax')}', 'Relax')">Relax</button>
                     <button class="btn" onclick="runEncodedScene('${enc('luz noche')}', 'Noche')">Noche</button>
-                    <button class="btn" onclick="runEncodedScene('${enc('luz cálida')}', 'Cálida')">Cálida</button>
-                    <button class="btn" onclick="runEncodedScene('${enc('luz fría')}', 'Fría')">Fría</button>
+                    ${has('temperature') ? `<button class="btn" onclick="runEncodedScene('${enc('luz cálida')}', 'Cálida')">Cálida</button>` : ''}
+                    ${has('temperature') ? `<button class="btn" onclick="runEncodedScene('${enc('luz fría')}', 'Fría')">Fría</button>` : ''}
                 </div>
+            ` : '';
+            const colorControls = has('color') ? `
                 <div class="light-panel-controls">
                     <button class="btn color-red" onclick="runEncodedScene('${enc('luz rojo')}', 'Rojo')">Rojo</button>
                     <button class="btn color-blue" onclick="runEncodedScene('${enc('luz azul')}', 'Azul')">Azul</button>
                     <button class="btn color-green" onclick="runEncodedScene('${enc('luz verde')}', 'Verde')">Verde</button>
                 </div>
+            ` : '';
+            const energyPanel = has('energy') ? `
+                <div class="device-status">Consumo disponible cuando el driver reporte energía.</div>
+            ` : '';
+
+            panel.innerHTML = `
+                <div class="light-panel-top">
+                    <div>
+                        <div class="light-panel-title">${escapeHtml(label)}</div>
+                        <div class="light-panel-subtitle">${escapeHtml(cfg.type || 'device')} · ${escapeHtml(activeLightName)} · ${escapeHtml(cfg.ip || 'sin IP')}</div>
+                    </div>
+                    <div class="device-badge">${statusLabel}</div>
+                </div>
+                ${switchControls}
+                ${sceneControls}
+                ${colorControls}
+                ${energyPanel}
             `;
         }
 

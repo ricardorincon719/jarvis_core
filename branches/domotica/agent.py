@@ -34,6 +34,7 @@ SCENE_ALIASES = {
 
 TRIGGERS = [
     "luz", "luces", "lampara", "lámpara", "bombilla", "foco", "cuarto", "sala",
+    "plug", "enchufe", "dispositivo", "switch",
     "domotica", "domótica", "ambiente", "escena", "automatizacion", "automatización",
     "dispositivo", "dispositivos", "descubrir", "descubre", "buscar", "agregar",
     "lectura", "relax", "noche", "normal", "calida", "cálida", "fria", "fría",
@@ -82,6 +83,10 @@ def has_any(text: str, words: List[str]) -> bool:
 
 def is_light_target(text: str) -> bool:
     return has_any(text, ["luz", "luces", "lampara", "cuarto", "sala", "foco", "bombilla"])
+
+
+def is_device_target(text: str) -> bool:
+    return is_light_target(text) or has_any(text, ["dispositivo", "plug", "enchufe", "switch"])
 
 
 def is_turn_on_intent(text: str) -> bool:
@@ -186,7 +191,7 @@ class DomoticaAgent:
         if has_any(text, ["restaurar", "ultimo estado", "último estado"]):
             return self._plan("restore_before_off", [{"type": "restore_before_off", "device": device_name}])
 
-        if "estado" in text and (is_light_target(text) or "domotica" in text):
+        if "estado" in text and (is_device_target(text) or "domotica" in text or device_name != DEVICE_NAME):
             return self._plan("status", [{"type": "status", "device": device_name}])
 
         scene_name, scene = self._parse_scene(text)
@@ -227,10 +232,10 @@ class DomoticaAgent:
                 [{"type": "apply_scene", "device": device_name, "scene_name": f"temperatura_{temp_percent}", "scene": scene}],
             )
 
-        if is_turn_off_intent(text) and is_light_target(text):
+        if is_turn_off_intent(text) and (is_device_target(text) or device_name != DEVICE_NAME):
             return self._plan("turn_off", [{"type": "turn_off", "device": device_name}])
 
-        if is_turn_on_intent(text) and is_light_target(text):
+        if is_turn_on_intent(text) and (is_device_target(text) or device_name != DEVICE_NAME):
             return self._plan("turn_on", [{"type": "turn_on", "device": device_name}])
 
         return self._plan("unknown", [])

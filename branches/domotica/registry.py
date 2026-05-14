@@ -1,5 +1,6 @@
 DRIVER_REGISTRY = {
     "tuya_light": "branches.domotica.drivers.tuya_light:TuyaLightDriver",
+    "tuya_plug": "branches.domotica.drivers.tuya_plug:TuyaPlugDriver",
 }
 
 

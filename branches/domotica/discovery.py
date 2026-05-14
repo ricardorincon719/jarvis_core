@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from branches.domotica.config import list_devices, normalize_device_name, upsert_device
+from branches.domotica.config import capabilities_for_type
 from branches.domotica.tuya_cloud import build_cloud_client, cloud_configured
 
 try:
@@ -18,6 +19,16 @@ except ModuleNotFoundError:
 BASE_DIR = Path(__file__).resolve().parent
 PENDING_FILE = BASE_DIR / "pending_devices.json"
 DEFAULT_DISCOVERY_TIMEOUT = int(os.getenv("JARVIS_TUYA_DISCOVERY_TIMEOUT", "8"))
+
+
+def _infer_candidate_type(candidate: Dict) -> str:
+    text = " ".join(
+        str(candidate.get(key) or "").lower()
+        for key in ("name_hint", "category", "product_key")
+    )
+    if any(word in text for word in ("plug", "enchufe", "tomada")) or candidate.get("category") in {"cz", "pc"}:
+        return "plug"
+    return "light"
 
 
 def _read_pending() -> List[Dict]:
@@ -371,12 +382,17 @@ def approve_pending_device(candidate_id: str, local_key: str = "", name: str = "
     label = name.strip() or candidate.get("name_hint") or "Lámpara Tuya"
     device_name = normalize_device_name(label, fallback=f"tuya_{candidate.get('device_id') or candidate_id}")
     room = room.strip() or "sin_asignar"
+    label_type_hint = label.lower()
+    device_type = "plug" if any(word in label_type_hint for word in ("plug", "enchufe", "tomada")) else _infer_candidate_type(candidate)
+    driver = "tuya_plug" if device_type == "plug" else "tuya_light"
 
     cfg = {
         "name": device_name,
         "label": label,
         "room": room,
-        "driver": "tuya_light",
+        "type": device_type,
+        "driver": driver,
+        "capabilities": capabilities_for_type(device_type, driver),
         "provider": "tuya",
         "device_id": candidate.get("device_id"),
         "local_key": local_key,

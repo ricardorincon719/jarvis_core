@@ -5,12 +5,17 @@ from pathlib import Path
 
 CONFIG_FILE = Path(__file__).resolve().parent / "devices.json"
 
+LIGHT_CAPABILITIES = ["switch", "brightness", "temperature", "color"]
+PLUG_CAPABILITIES = ["switch"]
+
 DEFAULT_DEVICES = {
     "lamp_quarto": {
         "name": "lamp_quarto",
         "label": "Lámpara Cuarto",
         "room": "cuarto",
+        "type": "light",
         "driver": "tuya_light",
+        "capabilities": LIGHT_CAPABILITIES,
         "provider": "tuya",
         "device_id": os.getenv("JARVIS_TUYA_DEVICE_ID", "3483408310521cf4c753"),
         "local_key": os.getenv("JARVIS_TUYA_LOCAL_KEY", "k~)0B|~.=~[(U!p@"),
@@ -22,9 +27,51 @@ DEFAULT_DEVICES = {
 }
 
 
+def infer_device_type(cfg: dict) -> str:
+    explicit = str(cfg.get("type") or "").strip().lower()
+    if explicit:
+        return explicit
+
+    driver = str(cfg.get("driver") or "").strip().lower()
+    name = str(cfg.get("name") or cfg.get("label") or "").strip().lower()
+    category = str(cfg.get("category") or "").strip().lower()
+
+    if "plug" in driver or "plug" in name or "enchufe" in name or category in {"cz", "pc"}:
+        return "plug"
+    if "light" in driver or "lamp" in name or "luz" in name or "lampara" in name:
+        return "light"
+    return "device"
+
+
+def capabilities_for_type(device_type: str, driver: str = "") -> list:
+    device_type = str(device_type or "").strip().lower()
+    driver = str(driver or "").strip().lower()
+    if device_type == "plug" or "plug" in driver:
+        return list(PLUG_CAPABILITIES)
+    if device_type == "light" or "light" in driver:
+        return list(LIGHT_CAPABILITIES)
+    return ["switch"]
+
+
+def normalize_device_config(name: str, cfg: dict) -> dict:
+    device = dict(cfg or {})
+    device.setdefault("name", name)
+    device.setdefault("label", name)
+    device.setdefault("room", "sin_asignar")
+    device_type = infer_device_type(device)
+    device["type"] = device_type
+    if not isinstance(device.get("capabilities"), list) or not device.get("capabilities"):
+        device["capabilities"] = capabilities_for_type(device_type, device.get("driver"))
+    device.setdefault("enabled", True)
+    return device
+
+
 def load_devices():
     if not CONFIG_FILE.exists():
-        return dict(DEFAULT_DEVICES)
+        return {
+            name: normalize_device_config(name, cfg)
+            for name, cfg in DEFAULT_DEVICES.items()
+        }
 
     with open(CONFIG_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -32,9 +79,15 @@ def load_devices():
     if not isinstance(data, dict):
         return dict(DEFAULT_DEVICES)
 
-    merged = dict(DEFAULT_DEVICES)
+    merged = {
+        name: normalize_device_config(name, cfg)
+        for name, cfg in DEFAULT_DEVICES.items()
+    }
     merged.update(data)
-    return merged
+    return {
+        name: normalize_device_config(name, cfg)
+        for name, cfg in merged.items()
+    }
 
 
 def save_devices(devices: dict):
@@ -77,6 +130,6 @@ def normalize_device_name(label: str, fallback: str = "tuya_light") -> str:
 
 def upsert_device(device_name: str, device_config: dict):
     devices = load_devices()
-    devices[device_name] = device_config
+    devices[device_name] = normalize_device_config(device_name, device_config)
     save_devices(devices)
     return devices[device_name]
