@@ -15,6 +15,10 @@ DESCRIPTION = "Agente de musica remoto con memoria persistente para el nodo lapt
 LAPTOP_HOST = os.getenv("JARVIS_MUSIC_HOST", "jarvis-node.local")
 PORT = int(os.getenv("JARVIS_MUSIC_PORT", "5005"))
 BASE_DIR = Path(__file__).resolve().parent
+CONNECT_TIMEOUT = float(os.getenv("JARVIS_MUSIC_CONNECT_TIMEOUT", "4"))
+STATUS_TIMEOUT = float(os.getenv("JARVIS_MUSIC_STATUS_TIMEOUT", "8"))
+CONTROL_TIMEOUT = float(os.getenv("JARVIS_MUSIC_CONTROL_TIMEOUT", "15"))
+PLAY_TIMEOUT = float(os.getenv("JARVIS_MUSIC_PLAY_TIMEOUT", "90"))
 
 TRIGGERS = [
     "musica", "música", "pon", "reproduce", "reproducir", "play",
@@ -65,17 +69,18 @@ class MusicNodeClient:
     def _url(self, endpoint: str) -> str:
         return f"http://{self.host}:{self.port}{endpoint}"
 
-    def post(self, endpoint: str, payload=None):
-        res = requests.post(self._url(endpoint), json=payload or {}, timeout=13)
+    def post(self, endpoint: str, payload=None, read_timeout: Optional[float] = None):
+        timeout = (CONNECT_TIMEOUT, read_timeout or CONTROL_TIMEOUT)
+        res = requests.post(self._url(endpoint), json=payload or {}, timeout=timeout)
         return res.json()
 
     def get(self, endpoint: str):
-        res = requests.get(self._url(endpoint), timeout=8)
+        res = requests.get(self._url(endpoint), timeout=(CONNECT_TIMEOUT, STATUS_TIMEOUT))
         return res.json()
 
     def execute(self, action: str, query: Optional[str] = None) -> Dict:
         if action == "play":
-            data = self.post("/play", {"query": query or "music"})
+            data = self.post("/play", {"query": query or "music"}, read_timeout=PLAY_TIMEOUT)
             return {
                 "respuesta": data.get("message", f"Reproduciendo: {query or 'music'}"),
                 "message": data.get("message"),
@@ -136,6 +141,30 @@ class MusicAgent:
         try:
             plan = self.build_plan(prompt)
             response = self.execute_plan(plan, prompt, normalized)
+        except requests.exceptions.ReadTimeout as exc:
+            plan = {"intent": "timeout", "actions": [], "error": str(exc)}
+            node_status = None
+            try:
+                node_status = self.client.status()
+            except Exception as status_exc:
+                node_status = {"status": "unknown", "error": str(status_exc)}
+
+            if isinstance(node_status, dict) and node_status.get("status") == "ok":
+                response = {
+                    "respuesta": (
+                        "El nodo de musica si esta conectado, pero tardo demasiado "
+                        "resolviendo la cancion con yt-dlp. Intenta de nuevo o usa "
+                        "una busqueda mas especifica."
+                    ),
+                    "cerebro": "MusicNodeAgent",
+                    "debug": {"plan": plan, "node_status": node_status},
+                }
+            else:
+                response = {
+                    "respuesta": f"Timeout consultando nodo de musica: {exc}",
+                    "cerebro": "MusicNodeAgent",
+                    "debug": {"plan": plan, "node_status": node_status},
+                }
         except Exception as exc:
             plan = {"intent": "error", "actions": [], "error": str(exc)}
             response = {
