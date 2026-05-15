@@ -23,6 +23,7 @@ YTDLP_FORMATS = [
     for value in os.getenv("JARVIS_YTDLP_FORMATS", "bestaudio/best[height<=480]/best,best").split(",")
     if value.strip()
 ]
+YTDLP_SEARCH_FALLBACKS = max(1, int(os.getenv("JARVIS_YTDLP_SEARCH_FALLBACKS", "5")))
 
 TRIGGERS = [
     "musica", "música", "reproduce", "reproducir", "lofi", "synthwave",
@@ -89,32 +90,34 @@ def yt_dlp_base_args():
 def resolve_track_info(query, index=1):
     last_error = None
 
-    for selected_format in YTDLP_FORMATS:
-        cmd = [
-            *yt_dlp_base_args(),
-            "-f",
-            selected_format,
-            "-g",
-            f"ytsearch{index}:{query}",
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
+    for candidate_index in range(index, index + YTDLP_SEARCH_FALLBACKS):
+        for selected_format in YTDLP_FORMATS:
+            cmd = [
+                *yt_dlp_base_args(),
+                "-f",
+                selected_format,
+                "-g",
+                f"ytsearch{candidate_index}:{query}",
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
 
-        if result.returncode != 0:
-            last_error = result.stderr.strip() or "yt-dlp no pudo resolver la busqueda"
-            continue
+            if result.returncode != 0:
+                last_error = result.stderr.strip() or "yt-dlp no pudo resolver la busqueda"
+                continue
 
-        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        if not lines:
-            last_error = "No se encontro una URL reproducible"
-            continue
+            lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            if not lines:
+                last_error = f"No se encontro una URL reproducible en resultado {candidate_index}"
+                continue
 
-        return {
-            "url": lines[-1],
-            "title": query,
-            "webpage_url": None,
-            "duration": None,
-            "thumbnail": None,
-        }
+            return {
+                "url": lines[-1],
+                "title": query,
+                "webpage_url": None,
+                "duration": None,
+                "thumbnail": None,
+                "resolved_index": candidate_index,
+            }
 
     raise RuntimeError(last_error or "yt-dlp no pudo resolver la busqueda")
 
@@ -126,42 +129,44 @@ def resolve_stream_url(query, index=1):
 def resolve_track(query, index=1):
     last_error = None
 
-    for selected_format in YTDLP_FORMATS:
-        cmd = [
-            *yt_dlp_base_args(),
-            "-f",
-            selected_format,
-            "--dump-json",
-            f"ytsearch{index}:{query}",
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+    for candidate_index in range(index, index + YTDLP_SEARCH_FALLBACKS):
+        for selected_format in YTDLP_FORMATS:
+            cmd = [
+                *yt_dlp_base_args(),
+                "-f",
+                selected_format,
+                "--dump-json",
+                f"ytsearch{candidate_index}:{query}",
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
 
-        if result.returncode != 0:
-            last_error = result.stderr.strip() or "yt-dlp no pudo resolver la busqueda"
-            continue
+            if result.returncode != 0:
+                last_error = result.stderr.strip() or "yt-dlp no pudo resolver la busqueda"
+                continue
 
-        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        if not lines:
-            last_error = "No se encontro metadata reproducible"
-            continue
+            lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            if not lines:
+                last_error = f"No se encontro metadata reproducible en resultado {candidate_index}"
+                continue
 
-        try:
-            info = json.loads(lines[-1])
-        except json.JSONDecodeError:
-            last_error = "yt-dlp devolvio metadata invalida"
-            continue
+            try:
+                info = json.loads(lines[-1])
+            except json.JSONDecodeError:
+                last_error = f"yt-dlp devolvio metadata invalida en resultado {candidate_index}"
+                continue
 
-        if not info.get("url"):
-            last_error = "No se encontro una URL reproducible"
-            continue
+            if not info.get("url"):
+                last_error = f"No se encontro una URL reproducible en resultado {candidate_index}"
+                continue
 
-        return {
-            "url": info.get("url"),
-            "title": info.get("title") or query,
-            "webpage_url": info.get("webpage_url") or info.get("original_url"),
-            "duration": info.get("duration"),
-            "thumbnail": info.get("thumbnail"),
-        }
+            return {
+                "url": info.get("url"),
+                "title": info.get("title") or query,
+                "webpage_url": info.get("webpage_url") or info.get("original_url"),
+                "duration": info.get("duration"),
+                "thumbnail": info.get("thumbnail"),
+                "resolved_index": candidate_index,
+            }
 
     try:
         return resolve_track_info(query, index)
@@ -284,7 +289,7 @@ def play_query(query, index=1):
         pid=proc.pid,
         query=query,
         url=track["url"],
-        index=index,
+        index=int(track.get("resolved_index") or index),
         paused=False,
         title=track.get("title"),
         webpage_url=track.get("webpage_url"),
