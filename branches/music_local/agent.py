@@ -2,6 +2,7 @@ import json
 import os
 import re
 import signal
+import shutil
 import subprocess
 import time
 import unicodedata
@@ -16,6 +17,12 @@ DESCRIPTION = "Agente de musica local en celular con memoria persistente"
 
 BASE_DIR = Path(__file__).resolve().parent
 STATE_FILE = BASE_DIR / "current" / "player_state.json"
+DEFAULT_NODE_PATH = Path.home() / ".nvm" / "versions" / "node" / "v24.15.0" / "bin" / "node"
+YTDLP_FORMATS = [
+    value.strip()
+    for value in os.getenv("JARVIS_YTDLP_FORMATS", "bestaudio/best[height<=480]/best,best").split(",")
+    if value.strip()
+]
 
 TRIGGERS = [
     "musica", "música", "reproduce", "reproducir", "lofi", "synthwave",
@@ -60,24 +67,56 @@ def has_any(text: str, words: List[str]) -> bool:
     return any(normalize_text(word) in text for word in words)
 
 
+def node_runtime_path():
+    configured = os.getenv("JARVIS_YTDLP_NODE_PATH") or os.getenv("YTDLP_NODE_PATH")
+    candidates = [configured, str(DEFAULT_NODE_PATH), shutil.which("node")]
+
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+
+    return None
+
+
+def yt_dlp_base_args():
+    args = ["yt-dlp"]
+    node_path = node_runtime_path()
+    if node_path:
+        args.extend(["--no-js-runtimes", "--js-runtimes", f"node:{node_path}"])
+    return args
+
+
 def resolve_track_info(query, index=1):
-    cmd = ["yt-dlp", "-f", "bestaudio", "-g", f"ytsearch{index}:{query}"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
+    last_error = None
 
-    if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or "yt-dlp no pudo resolver la busqueda")
+    for selected_format in YTDLP_FORMATS:
+        cmd = [
+            *yt_dlp_base_args(),
+            "-f",
+            selected_format,
+            "-g",
+            f"ytsearch{index}:{query}",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=40)
 
-    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    if not lines:
-        raise RuntimeError("No se encontro una URL reproducible")
+        if result.returncode != 0:
+            last_error = result.stderr.strip() or "yt-dlp no pudo resolver la busqueda"
+            continue
 
-    return {
-        "url": lines[-1],
-        "title": query,
-        "webpage_url": None,
-        "duration": None,
-        "thumbnail": None,
-    }
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        if not lines:
+            last_error = "No se encontro una URL reproducible"
+            continue
+
+        return {
+            "url": lines[-1],
+            "title": query,
+            "webpage_url": None,
+            "duration": None,
+            "thumbnail": None,
+        }
+
+    raise RuntimeError(last_error or "yt-dlp no pudo resolver la busqueda")
 
 
 def resolve_stream_url(query, index=1):
@@ -85,31 +124,49 @@ def resolve_stream_url(query, index=1):
 
 
 def resolve_track(query, index=1):
-    cmd = ["yt-dlp", "-f", "bestaudio", "--dump-json", f"ytsearch{index}:{query}"]
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
+    last_error = None
 
-    if result.returncode != 0:
-        return resolve_track_info(query, index)
+    for selected_format in YTDLP_FORMATS:
+        cmd = [
+            *yt_dlp_base_args(),
+            "-f",
+            selected_format,
+            "--dump-json",
+            f"ytsearch{index}:{query}",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
 
-    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-    if not lines:
-        return resolve_track_info(query, index)
+        if result.returncode != 0:
+            last_error = result.stderr.strip() or "yt-dlp no pudo resolver la busqueda"
+            continue
+
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        if not lines:
+            last_error = "No se encontro metadata reproducible"
+            continue
+
+        try:
+            info = json.loads(lines[-1])
+        except json.JSONDecodeError:
+            last_error = "yt-dlp devolvio metadata invalida"
+            continue
+
+        if not info.get("url"):
+            last_error = "No se encontro una URL reproducible"
+            continue
+
+        return {
+            "url": info.get("url"),
+            "title": info.get("title") or query,
+            "webpage_url": info.get("webpage_url") or info.get("original_url"),
+            "duration": info.get("duration"),
+            "thumbnail": info.get("thumbnail"),
+        }
 
     try:
-        info = json.loads(lines[-1])
-    except json.JSONDecodeError:
         return resolve_track_info(query, index)
-
-    if not info.get("url"):
-        return resolve_track_info(query, index)
-
-    return {
-        "url": info.get("url"),
-        "title": info.get("title") or query,
-        "webpage_url": info.get("webpage_url") or info.get("original_url"),
-        "duration": info.get("duration"),
-        "thumbnail": info.get("thumbnail"),
-    }
+    except RuntimeError as exc:
+        raise RuntimeError(last_error or str(exc))
 
 
 def save_state(pid=None, query=None, url=None, index=1, paused=False, title=None, webpage_url=None, duration=None, thumbnail=None):

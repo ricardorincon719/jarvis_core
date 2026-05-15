@@ -282,6 +282,31 @@ class TuyaLightDriver:
                 last_error = str(e)
                 self._log(f"Error probando IP {ip}: {e}", rid)
 
+        if not force_discovery:
+            self._log(f"Sin IP válida en cache/default ({last_error}); forzando discovery...", rid)
+            discovered_ip = self._discover_ip(rid)
+            if discovered_ip and discovered_ip not in seen:
+                self._log(f"Probando IP descubierta: {discovered_ip}", rid)
+                try:
+                    dev = self._build_device(discovered_ip)
+                    st = self._safe_status(dev, rid)
+
+                    if self._is_valid_status(st):
+                        self._update_cache_with_state(discovered_ip, st)
+                        self._log(f"IP válida tras discovery: {discovered_ip}", rid)
+                        return dev, discovered_ip, st
+
+                    if isinstance(st, dict) and st.get("Err") is not None:
+                        last_error = f"tuya_err_{st.get('Err')}"
+                    else:
+                        last_error = "status_invalid"
+
+                    self._log(f"IP descubierta descartada {discovered_ip}: {st}", rid)
+
+                except Exception as e:
+                    last_error = str(e)
+                    self._log(f"Error probando IP descubierta {discovered_ip}: {e}", rid)
+
         raise RuntimeError(f"No se pudo conectar a {self.name}. Último error: {last_error}")
 
     # =========================================================
@@ -509,6 +534,37 @@ class TuyaLightDriver:
             result["error"] = f"send_failed: {e}"
             result["failure_reason"] = "transport_error"
             result["classification"] = self._classify_result(result)
+            try:
+                self._log("Fallo al enviar; redescubriendo IP y reintentando...", rid)
+                dev, ip, before = self._get_working(force_discovery=True, rid=rid)
+                result["ip"] = ip
+                result["state_before"] = before
+
+                action_fn(dev)
+                result["sent"] = True
+
+                confirmed, after, reason = self._confirm_expected(
+                    dev,
+                    expected=expected,
+                    retries=self.CONFIRM_RETRIES,
+                    delay=self.CONFIRM_DELAY,
+                    rid=rid,
+                )
+
+                result["state_after"] = after
+                result["confirmed"] = confirmed
+                result["ok"] = confirmed
+                result["failure_reason"] = None if confirmed else reason
+                result["classification"] = self._classify_result(result)
+
+                if after is not None:
+                    self._update_cache_with_state(ip, after)
+                elif predicted_state is not None and result["sent"]:
+                    self._update_cache_with_state(ip, state_override=predicted_state)
+
+            except Exception as retry_error:
+                result["error"] = f"send_retry_failed: {retry_error}"
+                result["classification"] = self._classify_result(result)
             return result
 
         confirmed, after, reason = self._confirm_expected(
