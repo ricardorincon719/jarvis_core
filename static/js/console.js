@@ -87,7 +87,7 @@
             const response = await fetch('/ask_stream', {
                 method: 'POST',
                 headers: {
-                    'Authorization': TOKEN,
+                    ...(TOKEN ? { 'Authorization': TOKEN } : {}),
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ pregunta: text })

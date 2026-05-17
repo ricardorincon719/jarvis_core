@@ -1,4 +1,10 @@
-        const TOKEN = window.PEARL_CONFIG?.token || 'Bearer jarvis_local_123';
+        let TOKEN = window.PEARL_CONFIG?.token || '';
+
+        function setApiToken(token) {
+            TOKEN = token || '';
+            window.PEARL_CONFIG = window.PEARL_CONFIG || {};
+            window.PEARL_CONFIG.token = TOKEN;
+        }
 
         const cursor = document.getElementById('cursor');
         const cursorDot = document.getElementById('cursor-dot');
@@ -77,13 +83,15 @@
         setBootTime();
 
         async function apiFetch(url, options = {}) {
+            const headers = {
+                ...(TOKEN ? { 'Authorization': TOKEN } : {}),
+                ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+                ...(options.headers || {})
+            };
+
             const config = {
                 ...options,
-                headers: {
-                    'Authorization': TOKEN,
-                    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-                    ...(options.headers || {})
-                }
+                headers
             };
 
             const response = await fetch(url, config);

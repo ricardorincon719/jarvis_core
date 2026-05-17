@@ -7,10 +7,13 @@ El core solo orquesta, nunca ejecuta comandos peligrosos.
 import json
 import importlib
 import hashlib
+import hmac
 import ipaddress
 import os
 import re
+import secrets
 import socket
+import time
 from pathlib import Path
 from branches.scene_memory import SharedSceneMemory
 from router import route_query, update_context
@@ -45,11 +48,16 @@ CORE_HOST = os.getenv("JARVIS_CORE_HOST", "0.0.0.0")
 CORE_PORT = int(os.getenv("JARVIS_CORE_PORT", "5004"))
 CORE_DEBUG = os.getenv("JARVIS_CORE_DEBUG", "false").lower() in {"1", "true", "yes"}
 CORE_DEV_MODE = os.getenv("JARVIS_CORE_DEV_MODE", "false").lower() in {"1", "true", "yes"}
+SESSION_TTL_SECONDS = int(os.getenv("JARVIS_SESSION_TTL_SECONDS", "43200"))
+AUTH_MAX_ATTEMPTS = int(os.getenv("JARVIS_AUTH_MAX_ATTEMPTS", "5"))
+AUTH_LOCKOUT_SECONDS = int(os.getenv("JARVIS_AUTH_LOCKOUT_SECONDS", "300"))
 BRANCHES_DIR = Path(os.getenv("JARVIS_BRANCHES_DIR", str(BASE_DIR / "branches")))
 MANIFEST_FILE = Path(os.getenv("JARVIS_MANIFEST_FILE", str(BASE_DIR / "plugin_manifest.json")))
 plugins = {}
 plugin_errors = {}
 shared_scene_memory = SharedSceneMemory()
+api_sessions = {}
+auth_failures = {}
 
 COMPOUND_CONNECTOR_RE = re.compile(
     r"\s+(?:y|e|tambien|también|ademas|además|luego|despues|después)\s+"
@@ -95,8 +103,83 @@ def es_ip_local(ip: str) -> bool:
 
 def token_valido(req) -> bool:
     """Valida header Authorization con formato Bearer."""
+    token = bearer_token(req)
+    if not token:
+        return False
+    if hmac.compare_digest(token, SECRET_TOKEN):
+        return True
+    return session_token_valido(token)
+
+
+def bearer_token(req) -> str:
     auth = req.headers.get("Authorization", "").strip()
-    return auth == f"Bearer {SECRET_TOKEN}"
+    prefix = "Bearer "
+    if not auth.startswith(prefix):
+        return ""
+    return auth[len(prefix):].strip()
+
+
+def cleanup_expired_sessions():
+    now = time.time()
+    expired = [
+        token for token, expires_at in api_sessions.items()
+        if expires_at <= now
+    ]
+    for token in expired:
+        api_sessions.pop(token, None)
+
+
+def issue_session_token() -> str:
+    cleanup_expired_sessions()
+    token = secrets.token_urlsafe(32)
+    api_sessions[token] = time.time() + SESSION_TTL_SECONDS
+    return token
+
+
+def session_token_valido(token: str) -> bool:
+    cleanup_expired_sessions()
+    expires_at = api_sessions.get(token)
+    if not expires_at or expires_at <= time.time():
+        api_sessions.pop(token, None)
+        return False
+    return True
+
+
+def auth_client_key(req) -> str:
+    return (req.remote_addr or "unknown").strip() or "unknown"
+
+
+def auth_lockout_response(req):
+    key = auth_client_key(req)
+    entry = auth_failures.get(key)
+    if not entry:
+        return None
+
+    locked_until = entry.get("locked_until", 0)
+    now = time.time()
+    if locked_until > now:
+        retry_after = max(1, int(locked_until - now))
+        return jsonify({
+            "success": False,
+            "message": "Demasiados intentos. Intenta de nuevo más tarde.",
+            "retry_after": retry_after,
+        }), 429
+
+    if locked_until:
+        auth_failures.pop(key, None)
+    return None
+
+
+def record_auth_failure(req):
+    key = auth_client_key(req)
+    entry = auth_failures.setdefault(key, {"count": 0, "locked_until": 0})
+    entry["count"] += 1
+    if entry["count"] >= AUTH_MAX_ATTEMPTS:
+        entry["locked_until"] = time.time() + AUTH_LOCKOUT_SECONDS
+
+
+def clear_auth_failures(req):
+    auth_failures.pop(auth_client_key(req), None)
 
 def get_current_lan_ip() -> str:
     """Obtiene la IP LAN actual del dispositivo de forma dinámica."""
@@ -115,16 +198,31 @@ def acceso_local_autorizado(req):
     Devuelve None si está autorizado.
     Devuelve respuesta JSON de error si falla token o IP.
     """
-    auth = req.headers.get("Authorization", "").strip()
     ip = (req.remote_addr or "").strip()
 
-    if auth != f"Bearer {SECRET_TOKEN}":
+    if not token_valido(req):
         return jsonify({"error": "Unauthorized"}), 403
 
     if not es_ip_local(ip):
         return jsonify({"error": "Forbidden"}), 403
 
     return None
+
+
+def acceso_ip_local(req):
+    ip = (req.remote_addr or "").strip()
+    if not es_ip_local(ip):
+        return jsonify({"error": "Forbidden"}), 403
+    return None
+
+
+def json_object_or_error(req):
+    data = req.get_json(silent=True)
+    if data is None:
+        return {}, None
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "invalid_json_object"}), 400)
+    return data, None
 
 
 # ========== VERIFICACIÓN DE INTEGRIDAD ==========
@@ -140,12 +238,15 @@ def verify_plugin_integrity(plugin_path: Path) -> bool:
 
     for file_name, expected_hash in expected.items():
         file_path = plugin_path / file_name
-        if file_path.exists():
-            with open(file_path, "rb") as f:
-                actual_hash = hashlib.sha256(f.read()).hexdigest()
-            if actual_hash != expected_hash:
-                print(f"   ❌ Integridad fallida: {file_name}")
-                return False
+        if not file_path.exists():
+            print(f"   ❌ Integridad fallida: falta {file_name}")
+            return False
+
+        with open(file_path, "rb") as f:
+            actual_hash = hashlib.sha256(f.read()).hexdigest()
+        if actual_hash != expected_hash:
+            print(f"   ❌ Integridad fallida: {file_name}")
+            return False
 
     return True
 
@@ -286,12 +387,22 @@ def execute_compound_dispatch(dispatch, original_prompt=None):
         for step in steps
     ]
 
+    def step_ok(step):
+        if step.get("error"):
+            return False
+        if "ok" in step and not bool(step.get("ok")):
+            return False
+        nested_status = step.get("status")
+        if isinstance(nested_status, dict) and nested_status.get("status") == "error":
+            return False
+        return True
+
     result = {
         "respuesta": " | ".join(respuestas),
         "cerebro": "Core",
         "plugin": "compound",
         "compound": True,
-        "ok": ok and all(not step.get("error") for step in steps),
+        "ok": ok and all(step_ok(step) for step in steps),
         "steps": steps,
     }
 
@@ -353,7 +464,7 @@ def get_music_status_snapshot():
 @app.route("/")
 def index():
     """Página principal."""
-    return render_template("index.html", secret_token=SECRET_TOKEN)
+    return render_template("index.html")
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -361,7 +472,9 @@ def ask():
     if acceso is not None:
         return acceso
 
-    data = request.get_json(silent=True) or {}
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
     pregunta = (data.get("pregunta") or "").strip()
 
     if not pregunta:
@@ -412,7 +525,9 @@ def ask_stream():
     if acceso is not None:
         return acceso
 
-    data = request.get_json(silent=True) or {}
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
     pregunta = (data.get("pregunta") or "").strip()
 
     if not pregunta:
@@ -477,46 +592,45 @@ def ask_stream():
 
 @app.route("/ask_auth", methods=["POST"])
 def ask_auth():
-    print("\n=== DEBUG /ask_auth ===")
-    print("REMOTE_ADDR:", request.remote_addr)
-    print("HOST:", request.host)
-    print("AUTH HEADER:", request.headers.get("Authorization"))
-    print("JSON:", request.get_json(silent=True))
+    acceso = acceso_ip_local(request)
+    if acceso is not None:
+        return acceso
 
-    if not token_valido(request):
-        print("❌ BLOQUEADO POR TOKEN")
-        return jsonify({"success": False, "message": "Unauthorized"}), 403
+    lockout = auth_lockout_response(request)
+    if lockout is not None:
+        return lockout
 
-    data = request.get_json(silent=True) or {}
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
     pin = (data.get("pin") or "").strip()
-
-    print("PIN RECIBIDO:", repr(pin))
-    print("TOKEN ESPERADO:", f"Bearer {SECRET_TOKEN}")
 
     try:
         if "auth" not in plugins:
-            print("❌ Plugin auth no cargado")
             return jsonify({"success": False, "message": "Plugin auth no cargado"}), 500
 
         module = plugins["auth"]["module"]
-        print("PLUGIN AUTH:", module)
 
         if not hasattr(module, "authenticate"):
-            print("❌ Plugin auth sin función authenticate()")
             return jsonify({"success": False, "message": "Plugin auth inválido"}), 500
 
         result = module.authenticate(pin)
-        print("RESULTADO authenticate(pin):", result)
 
         if result:
-            print("✅ ACCESO CONCEDIDO")
-            return jsonify({"success": True, "message": "Acceso concedido, señor."})
+            clear_auth_failures(request)
+            token = issue_session_token()
+            return jsonify({
+                "success": True,
+                "message": "Acceso concedido, señor.",
+                "token": f"Bearer {token}",
+                "expires_in": SESSION_TTL_SECONDS,
+            })
 
-        print("❌ PIN INCORRECTO")
+        record_auth_failure(request)
         return jsonify({"success": False, "message": "PIN incorrecto."}), 403
 
     except Exception as e:
-        print(f"❌ ERROR EN /ask_auth: {type(e).__name__}: {e}")
+        print(f"Error interno auth: {type(e).__name__}: {e}")
         return jsonify({"success": False, "message": f"Error interno auth: {type(e).__name__}: {e}"}), 500
 
 @app.route("/plugins", methods=["GET"])
@@ -584,7 +698,9 @@ def discover_domotica_devices():
     if acceso is not None:
         return acceso
 
-    data = request.get_json(silent=True) or {}
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
     timeout = data.get("timeout")
     module = get_domotica_module()
     if not hasattr(module, "discover_devices"):
@@ -601,7 +717,9 @@ def approve_domotica_device(candidate_id):
     if acceso is not None:
         return acceso
 
-    data = request.get_json(silent=True) or {}
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
     module = get_domotica_module()
     if not hasattr(module, "approve_device_candidate"):
         return jsonify({"error": "domotica_discovery_not_supported"}), 501
@@ -679,7 +797,9 @@ def suggest_shared_scene():
     if acceso is not None:
         return acceso
 
-    context = request.get_json(silent=True) or {}
+    context, error = json_object_or_error(request)
+    if error is not None:
+        return error
     suggestion = shared_scene_memory.suggest_scene(context)
     if not suggestion:
         return jsonify({
@@ -717,6 +837,10 @@ def reject_shared_scene(scene_id):
 @app.route("/health", methods=["GET"])
 def health():
     """Estado del sistema."""
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
     return jsonify({
         "status": "online",
         "plugins": len(plugins),
@@ -728,6 +852,10 @@ def health():
 @app.route("/network", methods=["GET"])
 def network():
     """Devuelve la IP LAN actual y URLs útiles para la UI."""
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
     lan_ip = get_current_lan_ip()
     return jsonify({
         "localhost": f"http://127.0.0.1:{CORE_PORT}",

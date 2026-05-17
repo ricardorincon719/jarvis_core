@@ -26,6 +26,7 @@
                 });
 
                 if (data.success) {
+                    setApiToken(data.token || '');
                     isAuthenticated = true;
 
                     if (authSuccess) {
