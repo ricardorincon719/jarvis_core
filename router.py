@@ -115,6 +115,31 @@ MUSIC_REMOTE_HINTS = {
     "allá": 5,
 }
 
+SCENE_MANAGEMENT_PHRASES = {
+    "aprobar escena",
+    "aprueba escena",
+    "aproba escena",
+    "aprobar patron",
+    "aprueba patron",
+    "aproba patron",
+    "rechazar escena",
+    "rechaza escena",
+    "rechazar patron",
+    "rechaza patron",
+    "activar escena",
+    "activa escena",
+    "ejecutar escena",
+    "ejecuta escena",
+    "listar escenas",
+    "lista escenas",
+    "muestra escenas",
+    "ver escenas",
+    "escenas aprendidas",
+    "escenas guardadas",
+    "patrones",
+    "automatizaciones",
+}
+
 LOCAL_IA_WORDS = {
     "pregunta": 4,
     "explica": 6,
@@ -257,6 +282,28 @@ def compute_keyword_score(text: str, words: Dict[str, int]) -> int:
     return score
 
 
+def has_any_phrase(text: str, phrases) -> bool:
+    return any(contains_phrase(text, normalize_text(phrase)) for phrase in phrases)
+
+
+def is_scene_management_command(text: str) -> bool:
+    return has_any_phrase(text, SCENE_MANAGEMENT_PHRASES)
+
+
+def has_music_local_hint(text: str) -> bool:
+    return has_any_phrase(text, MUSIC_LOCAL_HINTS.keys())
+
+
+def has_music_remote_hint(text: str) -> bool:
+    return has_any_phrase(text, MUSIC_REMOTE_HINTS.keys())
+
+
+def is_clear_music_request(text: str) -> bool:
+    if is_scene_management_command(text):
+        return False
+    return has_any_phrase(text, MUSIC_WORDS.keys())
+
+
 def context_is_fresh() -> bool:
     return (time.time() - ROUTER_STATE["last_success_ts"]) <= CONTEXT_TTL
 
@@ -287,10 +334,10 @@ def prefer_music_plugin(available_plugins: List[str]) -> Optional[str]:
     if last_plugin in {"music_local", "music"} and last_plugin in available_plugins:
         return last_plugin
 
-    if "music_local" in available_plugins:
-        return "music_local"
     if "music" in available_plugins:
         return "music"
+    if "music_local" in available_plugins:
+        return "music_local"
 
     return None
 
@@ -371,6 +418,9 @@ def route_query(text: str, available_plugins: List[str]) -> str:
     raw_text = text
     text = normalize_text(text)
 
+    if is_scene_management_command(text) and "domotica" in available_plugins:
+        return "domotica"
+
     # -------------------------
     # 1) STOP CONTEXTUAL
     # -------------------------
@@ -389,6 +439,19 @@ def route_query(text: str, available_plugins: List[str]) -> str:
         music_plugin = prefer_music_plugin(available_plugins)
         if music_plugin:
             return music_plugin
+
+    # Reproduccion simple: prioriza el nodo de musica remoto. Solo cae en
+    # music_local si el usuario pide explicitamente el celular/local o si el
+    # plugin remoto no esta cargado.
+    if is_clear_music_request(text):
+        if has_music_local_hint(text) and "music_local" in available_plugins:
+            return "music_local"
+        if has_music_remote_hint(text) and "music" in available_plugins:
+            return "music"
+        if "music" in available_plugins:
+            return "music"
+        if "music_local" in available_plugins:
+            return "music_local"
 
     # -------------------------
     # 2) SCORING

@@ -16,7 +16,7 @@ import socket
 import time
 from pathlib import Path
 from branches.scene_memory import SharedSceneMemory
-from router import route_query, update_context
+from router import normalize_text, route_query, update_context
 from flask import Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
 
@@ -460,6 +460,301 @@ def get_music_status_snapshot():
     return snapshot
 
 
+def extract_shared_scene_status_change(text: str):
+    normalized = normalize_text(text)
+    for word, action in (
+        ("aprobar", "approved"),
+        ("aprueba", "approved"),
+        ("aproba", "approved"),
+        ("rechazar", "rejected"),
+        ("rechaza", "rejected"),
+    ):
+        if word in normalized:
+            query = normalized.split(word, 1)[1].strip()
+            query = query.replace("escena", "", 1).replace("patron", "", 1).strip()
+            return action, query
+    return None, None
+
+
+def extract_shared_scene_activation(text: str):
+    normalized = normalize_text(text)
+    for phrase in ("activar escena", "activa escena", "ejecutar escena", "ejecuta escena"):
+        if phrase in normalized:
+            return normalized.split(phrase, 1)[1].strip()
+    return None
+
+
+def is_shared_scene_list_query(text: str) -> bool:
+    normalized = normalize_text(text)
+    return any(
+        phrase in normalized
+        for phrase in (
+            "escenas aprendidas",
+            "escenas guardadas",
+            "listar escenas",
+            "lista escenas",
+            "muestra escenas",
+            "ver escenas",
+            "patrones",
+            "automatizaciones",
+        )
+    )
+
+
+def wants_music_local_fallback(text: str) -> bool:
+    normalized = normalize_text(text)
+    return any(
+        phrase in normalized
+        for phrase in (
+            "musica local",
+            "music local",
+            "en celular",
+            "al celular",
+            "telefono",
+            "android",
+            "aca",
+            "este dispositivo",
+        )
+    )
+
+
+def wants_lights_only(text: str) -> bool:
+    normalized = normalize_text(text)
+    return any(
+        phrase in normalized
+        for phrase in (
+            "solo luces",
+            "solo luz",
+            "sin musica",
+            "aplica luces",
+            "aplicar luces",
+        )
+    )
+
+
+def music_node_available():
+    if "music" not in plugins:
+        return False, {"status": "missing_plugin", "target": "laptop"}
+
+    module = plugins["music"]["module"]
+    if not hasattr(module, "status"):
+        return True, {"status": "unknown", "target": "laptop"}
+
+    try:
+        status = module.status()
+    except Exception as exc:
+        return False, {"status": "error", "target": "laptop", "error": str(exc)}
+
+    if not isinstance(status, dict):
+        return False, {"status": "invalid", "target": "laptop", "raw": str(status)}
+
+    if status.get("status") in {"error", "offline", "unavailable"}:
+        return False, status
+
+    return True, status
+
+
+def shared_scene_needs_music_confirmation(scene: dict, prompt: str):
+    use_local = wants_music_local_fallback(prompt)
+    lights_only = wants_lights_only(prompt)
+
+    for action in scene.get("actions") or []:
+        if not isinstance(action, dict) or action.get("domain") != "music":
+            continue
+
+        target = normalize_text(action.get("target") or "")
+        plugin_name = action.get("plugin")
+        wants_laptop = plugin_name == "music" or target in {"laptop", "pc", "nodo"}
+        if not wants_laptop:
+            continue
+
+        available, status = music_node_available()
+        if available:
+            continue
+
+        if lights_only:
+            return None
+
+        if use_local and "music_local" in plugins:
+            return None
+
+        return {
+            "respuesta": (
+                "La escena esta aprobada, pero no detecto el nodo de musica de la laptop. "
+                "Dime 'activa escena "
+                f"{scene.get('id')} con musica local' para usar el celular, o "
+                f"'activa escena {scene.get('id')} solo luces' para aplicar solo las luces."
+            ),
+            "cerebro": "Core",
+            "plugin": "domotica",
+            "ok": False,
+            "requires_confirmation": True,
+            "needs_music_target_confirmation": True,
+            "scene": scene,
+            "music_status": status,
+            "options": ["music_local", "lights_only"],
+        }
+
+    return None
+
+
+def execute_shared_scene(scene: dict, prompt: str):
+    confirmation = shared_scene_needs_music_confirmation(scene, prompt)
+    if confirmation:
+        return confirmation
+
+    use_local = wants_music_local_fallback(prompt)
+    lights_only = wants_lights_only(prompt)
+    results = []
+
+    for action in scene.get("actions") or []:
+        if not isinstance(action, dict):
+            continue
+
+        domain = action.get("domain")
+        if domain == "music":
+            if lights_only:
+                results.append({
+                    "ok": True,
+                    "plugin": "music",
+                    "skipped": True,
+                    "respuesta": "Musica omitida por confirmacion de solo luces.",
+                })
+                continue
+
+            plugin_name = "music_local" if use_local else (action.get("plugin") or "music")
+            if plugin_name == "music" and "music" not in plugins and "music_local" in plugins and use_local:
+                plugin_name = "music_local"
+
+            if plugin_name not in plugins:
+                return {
+                    "respuesta": f"No esta disponible el agente {plugin_name} para ejecutar la musica de la escena.",
+                    "cerebro": "Core",
+                    "plugin": "domotica",
+                    "ok": False,
+                    "requires_confirmation": True,
+                    "scene": scene,
+                }
+
+            query = action.get("query") or action.get("genre") or "musica"
+            results.append(execute_plugin(plugin_name, f"reproduce {query}"))
+            continue
+
+        if domain == "domotica":
+            plugin_name = action.get("plugin") or "domotica"
+            if plugin_name not in plugins:
+                return {
+                    "respuesta": f"No esta disponible el agente {plugin_name} para ejecutar las luces de la escena.",
+                    "cerebro": "Core",
+                    "plugin": "domotica",
+                    "ok": False,
+                    "scene": scene,
+                }
+
+            module = plugins[plugin_name]["module"]
+            device = action.get("device")
+            scene_data = action.get("scene") or {}
+            if hasattr(module, "apply_scene_to_device"):
+                light_result = module.apply_scene_to_device(device, scene_data)
+            elif hasattr(module, "apply_scene"):
+                light_result = module.apply_scene(scene_data)
+            else:
+                light_result = execute_plugin(plugin_name, f"luz escena {action.get('scene_name') or 'normal'}")
+
+            if not isinstance(light_result, dict):
+                light_result = {"respuesta": str(light_result)}
+            light_result.setdefault("plugin", plugin_name)
+            light_result.setdefault("ok", True)
+            light_result.setdefault("respuesta", f"Luz {action.get('scene_name') or 'escena'} aplicada")
+            results.append(light_result)
+            continue
+
+        results.append({
+            "ok": False,
+            "plugin": action.get("plugin"),
+            "respuesta": f"Accion de escena no soportada: {domain}",
+        })
+
+    shared_scene_memory.mark_scene_executed(scene.get("id"))
+    respuestas = [
+        str(result.get("respuesta") or result.get("message") or result.get("plugin"))
+        for result in results
+        if isinstance(result, dict)
+    ]
+    return {
+        "respuesta": f"Escena aplicada: {scene.get('name')}. " + " | ".join(respuestas),
+        "cerebro": "Core",
+        "plugin": "domotica",
+        "compound": True,
+        "ok": all(bool(result.get("ok", True)) for result in results if isinstance(result, dict)),
+        "scene": scene,
+        "steps": results,
+    }
+
+
+def handle_shared_scene_command(prompt: str):
+    if is_shared_scene_list_query(prompt):
+        scenes = shared_scene_memory.list_scenes()
+        if not scenes:
+            answer = "Todavia no hay escenas aprendidas."
+        else:
+            labels = [
+                f"{scene.get('id')} ({scene.get('status')}): {scene.get('name')}"
+                for scene in scenes[-5:]
+            ]
+            answer = "Escenas aprendidas: " + " | ".join(labels)
+        return {
+            "respuesta": answer,
+            "cerebro": "Core",
+            "plugin": "domotica",
+            "scenes": scenes,
+            "summary": shared_scene_memory.summary(),
+        }
+
+    status, query = extract_shared_scene_status_change(prompt)
+    if status:
+        scene = shared_scene_memory.find_scene(query)
+        if not scene:
+            return {
+                "respuesta": "No encontre esa escena aprendida.",
+                "cerebro": "Core",
+                "plugin": "domotica",
+                "ok": False,
+            }
+        updated = shared_scene_memory.update_scene_status(scene["id"], status)
+        label = "aprobada" if status == "approved" else "rechazada"
+        return {
+            "respuesta": f"Escena {label}: {updated.get('name')}",
+            "cerebro": "Core",
+            "plugin": "domotica",
+            "ok": True,
+            "scene": updated,
+        }
+
+    query = extract_shared_scene_activation(prompt)
+    if query is not None:
+        scene = shared_scene_memory.find_scene(query)
+        if not scene:
+            return {
+                "respuesta": "No encontre esa escena aprendida.",
+                "cerebro": "Core",
+                "plugin": "domotica",
+                "ok": False,
+            }
+        if scene.get("status") != "approved":
+            return {
+                "respuesta": f"La escena '{scene.get('name')}' existe, pero necesita aprobacion antes de ejecutarse.",
+                "cerebro": "Core",
+                "plugin": "domotica",
+                "ok": False,
+                "requires_confirmation": True,
+                "scene": scene,
+            }
+        return execute_shared_scene(scene, prompt)
+
+    return None
+
+
 # ========== RUTAS ==========
 @app.route("/")
 def index():
@@ -494,6 +789,12 @@ def ask():
         return jsonify(execute_compound_dispatch(compound_dispatch, original_prompt=pregunta))
 
     plugin_name = route_query(pregunta, available_plugins)
+
+    if plugin_name == "domotica":
+        shared_scene_response = handle_shared_scene_command(pregunta)
+        if shared_scene_response is not None:
+            update_context("domotica", pregunta)
+            return jsonify(shared_scene_response)
 
     print(f"   🎯 Delegando a: {plugin_name}")
 
@@ -547,6 +848,12 @@ def ask_stream():
         return jsonify(execute_compound_dispatch(compound_dispatch, original_prompt=pregunta))
 
     plugin_name = route_query(pregunta, available_plugins)
+
+    if plugin_name == "domotica":
+        shared_scene_response = handle_shared_scene_command(pregunta)
+        if shared_scene_response is not None:
+            update_context("domotica", pregunta)
+            return jsonify(shared_scene_response)
 
     print(f"   🎯 Delegando streaming a: {plugin_name}")
 

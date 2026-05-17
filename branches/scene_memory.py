@@ -2,6 +2,7 @@ import json
 import os
 import re
 import threading
+import unicodedata
 import uuid
 from collections import defaultdict
 from datetime import datetime
@@ -53,6 +54,38 @@ def _normalize_text(value: Optional[str]) -> str:
     value = str(value).strip().lower()
     value = re.sub(r"\s+", " ", value)
     return value or "unknown"
+
+
+def _normalize_search_text(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    value = str(value).strip().lower()
+    value = "".join(
+        char for char in unicodedata.normalize("NFD", value)
+        if unicodedata.category(char) != "Mn"
+    )
+    value = re.sub(r"[^\w\s]", " ", value)
+    return " ".join(value.split())
+
+
+def _scene_search_blob(scene: Dict) -> str:
+    pieces = [
+        scene.get("id"),
+        scene.get("name"),
+        scene.get("status"),
+    ]
+    pieces.extend(scene.get("signature") or [])
+
+    trigger = scene.get("trigger") or {}
+    pieces.extend(trigger.values())
+
+    for action in scene.get("actions") or []:
+        if not isinstance(action, dict):
+            continue
+        for key in ("domain", "plugin", "type", "target", "query", "genre", "device", "scene_name"):
+            pieces.append(action.get(key))
+
+    return _normalize_search_text(" ".join(str(piece) for piece in pieces if piece is not None))
 
 
 def _parse_time(value: Optional[str]) -> datetime:
@@ -292,6 +325,42 @@ class SharedSceneMemory:
             return [scene for scene in scenes if scene.get("status") == status]
         return scenes
 
+    def find_scene(self, query: str, statuses: Optional[set] = None) -> Optional[Dict]:
+        normalized_query = _normalize_search_text(query)
+        scenes = self.list_scenes()
+        if statuses:
+            scenes = [scene for scene in scenes if scene.get("status") in statuses]
+
+        if not normalized_query:
+            return scenes[0] if len(scenes) == 1 else None
+
+        for scene in scenes:
+            if normalized_query == _normalize_search_text(scene.get("id")):
+                return scene
+
+        query_tokens = [token for token in normalized_query.split() if token not in {"escena", "patron"}]
+        scored = []
+        for scene in scenes:
+            blob = _scene_search_blob(scene)
+            score = 0
+            if normalized_query == _normalize_search_text(scene.get("name")):
+                score += 80
+            if normalized_query in blob:
+                score += 50
+            score += sum(8 for token in query_tokens if token in blob)
+            if scene.get("status") == "approved":
+                score += 3
+            elif scene.get("status") == "candidate":
+                score += 2
+            if score > 0:
+                scored.append((score, scene.get("updated_at") or scene.get("last_seen") or "", scene))
+
+        if not scored:
+            return None
+
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return scored[0][2]
+
     def update_scene_status(self, scene_id: str, status: str) -> Optional[Dict]:
         if status not in {"candidate", "approved", "rejected", "archived"}:
             raise ValueError("Estado de escena invalido")
@@ -304,6 +373,18 @@ class SharedSceneMemory:
                     scene["updated_at"] = _now_iso()
                     if status == "approved":
                         scene["last_confirmed_at"] = _now_iso()
+                    _write_json(SCENES_FILE, scenes)
+                    return scene
+        return None
+
+    def mark_scene_executed(self, scene_id: str) -> Optional[Dict]:
+        with _lock:
+            scenes = _read_json(SCENES_FILE, [])
+            for scene in scenes:
+                if scene.get("id") == scene_id:
+                    scene["execution_count"] = int(scene.get("execution_count") or 0) + 1
+                    scene["last_executed_at"] = _now_iso()
+                    scene["updated_at"] = _now_iso()
                     _write_json(SCENES_FILE, scenes)
                     return scene
         return None

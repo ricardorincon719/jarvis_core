@@ -53,6 +53,10 @@ def apply_scene(scene: dict):
     return _agent.service.apply_scene(DEVICE_NAME, scene)
 
 
+def apply_scene_to_device(device: str, scene: dict):
+    return _agent.service.apply_scene(device or DEVICE_NAME, scene)
+
+
 def list_devices():
     return _agent.service.devices()
 
