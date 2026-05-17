@@ -42,11 +42,14 @@ Variables principales:
 - `JARVIS_MUSIC_HOST` y `JARVIS_MUSIC_PORT`: nodo de musica.
 - `JARVIS_ORCHESTRATOR_URL`: orchestrator laptop.
 - `JARVIS_OLLAMA_URL` y `JARVIS_OLLAMA_MODEL`: IA local.
+- `JARVIS_SCENE_MEMORY_MIN_REPETITIONS`: eventos minimos para escena candidata. Default: `4`.
+- `JARVIS_SCENE_MEMORY_MIN_UNIQUE_DAYS`: dias unicos minimos para escena candidata. Default: `2`.
+- `JARVIS_SCENE_MEMORY_MIN_DATE`: fecha ISO opcional para ignorar eventos anteriores a una correccion fisica/configuracion.
 - `SERPAPI_KEY`: vuelos/internet.
 
 ## Verificacion rapida
 
 ```bash
 .venv/bin/python -m py_compile core.py router.py
-curl http://127.0.0.1:5004/health
+curl -H "Authorization: Bearer $JARVIS_SECRET_TOKEN" http://127.0.0.1:5004/health
 ```

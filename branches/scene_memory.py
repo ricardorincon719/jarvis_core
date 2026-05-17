@@ -16,8 +16,9 @@ MEMORY_DIR = Path(os.getenv("JARVIS_SCENE_MEMORY_DIR", str(BASE_DIR / "scene_mem
 EVENTS_FILE = MEMORY_DIR / "compound_events.json"
 SCENES_FILE = MEMORY_DIR / "learned_scenes.json"
 
-DEFAULT_MIN_REPETITIONS = 6
-DEFAULT_MIN_UNIQUE_DAYS = 6
+DEFAULT_MIN_REPETITIONS = int(os.getenv("JARVIS_SCENE_MEMORY_MIN_REPETITIONS", "4"))
+DEFAULT_MIN_UNIQUE_DAYS = int(os.getenv("JARVIS_SCENE_MEMORY_MIN_UNIQUE_DAYS", "2"))
+MIN_EVENT_DATE = os.getenv("JARVIS_SCENE_MEMORY_MIN_DATE", "").strip()
 
 _lock = threading.Lock()
 
@@ -63,6 +64,15 @@ def _parse_time(value: Optional[str]) -> datetime:
         return datetime.now()
 
 
+def _min_event_datetime() -> Optional[datetime]:
+    if not MIN_EVENT_DATE:
+        return None
+    try:
+        return datetime.fromisoformat(MIN_EVENT_DATE.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
 def _time_window(dt: datetime) -> str:
     hour = dt.hour
     if 5 <= hour < 12:
@@ -104,6 +114,20 @@ def _scene_signature(event: Dict) -> Tuple[str, str, str, str, str, str, str]:
     )
 
 
+def _scene_family_signature(event: Dict) -> Tuple[str, str, str, str]:
+    music = event.get("music") or {}
+    lights = event.get("lights") or {}
+    light_scene = lights.get("scene") or {}
+    genre_or_query = music.get("genre") or music.get("query")
+
+    return (
+        _normalize_text(genre_or_query),
+        _normalize_text(lights.get("scene_name")),
+        _normalize_text(light_scene.get("mode")),
+        _brightness_bucket(light_scene.get("brightness")),
+    )
+
+
 def _stored_signature(scene: Dict) -> Optional[Tuple[str, ...]]:
     signature = scene.get("signature")
     if isinstance(signature, list):
@@ -112,11 +136,18 @@ def _stored_signature(scene: Dict) -> Optional[Tuple[str, ...]]:
 
 
 def _build_scene_from_group(signature: Tuple[str, ...], events: List[Dict]) -> Dict:
-    music_target, music_key, light_device, scene_name, light_mode, brightness_bucket, time_window = signature
     latest = max(events, key=lambda item: item.get("timestamp", ""))
     latest_music = latest.get("music") or {}
     latest_lights = latest.get("lights") or {}
+    latest_light_scene = latest_lights.get("scene") or {}
     scene_id = "scene_" + uuid.uuid4().hex[:12]
+    music_target = _normalize_text(latest_music.get("target"))
+    music_key = _normalize_text(latest_music.get("genre") or latest_music.get("query"))
+    light_device = _normalize_text(latest_lights.get("device"))
+    scene_name = _normalize_text(latest_lights.get("scene_name"))
+    light_mode = _normalize_text(latest_light_scene.get("mode"))
+    brightness_bucket = _brightness_bucket(latest_light_scene.get("brightness"))
+    time_window = _time_window(_parse_time(latest.get("timestamp")))
 
     return {
         "id": scene_id,
@@ -323,13 +354,20 @@ class SharedSceneMemory:
             for signature in (_stored_signature(scene) for scene in scenes)
             if signature
         }
+        min_dt = _min_event_datetime()
 
         grouped = defaultdict(list)
         for event in events:
+            if min_dt and _parse_time(event.get("timestamp")) < min_dt:
+                continue
             signature = _scene_signature(event)
             if "unknown" in signature[:5]:
                 continue
             grouped[signature].append(event)
+
+            family_signature = ("family",) + _scene_family_signature(event)
+            if "unknown" not in family_signature[1:4]:
+                grouped[family_signature].append(event)
 
         created = []
         for signature, group in grouped.items():
