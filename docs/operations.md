@@ -4,7 +4,8 @@
 
 - Celular/Termux: core principal de usuario, `core.py`, puerto `5004`.
 - Laptop: nodo pesado, musica `5005`, orchestrator `5006`, Ollama `11434`.
-- Repo `pearl-home` en laptop: copia editable del core movil para revision, pruebas y sincronizacion.
+- Repo oficial para pruebas y GitHub: `/home/samsung-ubuntu/jarvis_core`.
+- Repo `pearl-home` en laptop: copia historica/de apoyo. No usar como fuente final sin migrar cambios a `jarvis_core`.
 
 ## Core movil
 
@@ -20,8 +21,8 @@ python core.py
 El core no arranca en laptop por accidente. Para una prueba explicita:
 
 ```bash
-cd /home/samsung-ubuntu/pearl-home
-JARVIS_CORE_DEV_MODE=true .venv/bin/python core.py
+cd /home/samsung-ubuntu/jarvis_core
+JARVIS_CORE_DEV_MODE=true /home/samsung-ubuntu/pearl-home/.venv/bin/python core.py
 ```
 
 Health check:
