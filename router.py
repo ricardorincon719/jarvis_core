@@ -79,6 +79,8 @@ MUSIC_WORDS = {
     "cancion": 8,
     "canción": 8,
     "tema": 6,
+    "sonando": 9,
+    "reproductor": 8,
     "playlist": 8,
     "album": 6,
     "álbum": 6,
@@ -222,6 +224,21 @@ TERMUX_API_WORDS = {
     "termux-torch": 8,
 }
 
+SYSTEM_STATUS_PATTERNS = {
+    "estado del sistema",
+    "estado general",
+    "estado de pearl",
+    "estado del core",
+    "salud del sistema",
+    "diagnostico del sistema",
+    "diagnóstico del sistema",
+    "diagnostico de pearl",
+    "diagnóstico de pearl",
+    "plugins disponibles",
+    "health",
+    "system status",
+}
+
 # Para desempates o preferencias base
 BASE_PRIORITIES = {
     "test": 0,
@@ -288,6 +305,10 @@ def has_any_phrase(text: str, phrases) -> bool:
 
 def is_scene_management_command(text: str) -> bool:
     return has_any_phrase(text, SCENE_MANAGEMENT_PHRASES)
+
+
+def is_system_status_request(text: str) -> bool:
+    return has_any_phrase(text, SYSTEM_STATUS_PATTERNS)
 
 
 def has_music_local_hint(text: str) -> bool:
@@ -374,7 +395,7 @@ def score_music_local(text: str) -> int:
         score += 10
 
     # Si menciona lofi/jazz/relajante y no menciona luz, empuja a música
-    if any(x in text for x in ["lofi", "jazz", "relajante", "playlist", "cancion"]):
+    if any(x in text for x in ["lofi", "jazz", "relajante", "playlist", "cancion", "sonando", "reproductor"]):
         score += 7
 
     return score
@@ -417,6 +438,9 @@ def route_query(text: str, available_plugins: List[str]) -> str:
     """
     raw_text = text
     text = normalize_text(text)
+
+    if is_system_status_request(text):
+        return "core_health"
 
     if is_scene_management_command(text) and "domotica" in available_plugins:
         return "domotica"
@@ -498,7 +522,7 @@ def route_query(text: str, available_plugins: List[str]) -> str:
             scores["domotica"] += 15
 
     # Si claramente pide reproducir música
-    if any(x in text for x in ["reproduce", "musica", "play", "playlist", "cancion", "lofi", "jazz"]):
+    if any(x in text for x in ["reproduce", "musica", "play", "playlist", "cancion", "sonando", "reproductor", "lofi", "jazz"]):
         if "music_local" in scores:
             scores["music_local"] += 10
         if "music" in scores:

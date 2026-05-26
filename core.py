@@ -16,7 +16,7 @@ import socket
 import time
 from pathlib import Path
 from branches.scene_memory import SharedSceneMemory
-from router import normalize_text, route_query, update_context
+from router import is_system_status_request, normalize_text, route_query, update_context
 from flask import Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
 
@@ -357,6 +357,40 @@ def execute_plugin(plugin_name: str, prompt: str):
     response["version"] = plugin_info["version"]
     update_context(plugin_name, prompt)
     return response
+
+
+def build_core_status_response(prompt: str):
+    scene_summary = shared_scene_memory.summary()
+    loaded_plugins = sorted(plugins.keys())
+    error_names = sorted(plugin_errors.keys())
+
+    parts = [
+        "Core online",
+        f"plugins cargados: {len(loaded_plugins)}",
+    ]
+    if loaded_plugins:
+        parts.append("disponibles: " + ", ".join(loaded_plugins))
+    if error_names:
+        parts.append("errores de plugin: " + ", ".join(error_names))
+    else:
+        parts.append("sin errores de plugin")
+
+    candidate_scenes = scene_summary.get("candidate_scenes")
+    approved_scenes = scene_summary.get("approved_scenes")
+    if candidate_scenes is not None and approved_scenes is not None:
+        parts.append(f"escenas: {candidate_scenes} candidatas, {approved_scenes} aprobadas")
+
+    update_context("core_health", prompt)
+    return {
+        "respuesta": ". ".join(parts) + ".",
+        "cerebro": "Core",
+        "plugin": "core_health",
+        "status": "online",
+        "plugins": loaded_plugins,
+        "versions": {name: info["version"] for name, info in plugins.items()},
+        "plugin_errors": plugin_errors,
+        "scene_memory": scene_summary,
+    }
 
 
 def execute_compound_dispatch(dispatch, original_prompt=None):
@@ -779,6 +813,9 @@ def ask():
     print("REMOTE_ADDR:", request.remote_addr)
     print("HOST:", request.host)
 
+    if is_system_status_request(normalize_text(pregunta)):
+        return jsonify(build_core_status_response(pregunta))
+
     available_plugins = list(plugins.keys())
     compound_dispatch = build_compound_dispatch(pregunta, available_plugins)
 
@@ -837,6 +874,9 @@ def ask_stream():
     print(f"\n📨 Consulta streaming: {pregunta}")
     print("REMOTE_ADDR:", request.remote_addr)
     print("HOST:", request.host)
+
+    if is_system_status_request(normalize_text(pregunta)):
+        return jsonify(build_core_status_response(pregunta))
 
     available_plugins = list(plugins.keys())
     compound_dispatch = build_compound_dispatch(pregunta, available_plugins)

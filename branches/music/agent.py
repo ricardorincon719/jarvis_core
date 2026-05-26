@@ -24,6 +24,7 @@ TRIGGERS = [
     "musica", "música", "pon", "reproduce", "reproducir", "play",
     "pausa", "reanuda", "continua", "continúa", "parar", "detener", "stop",
     "siguiente", "next", "anterior", "previo", "previous", "estado",
+    "sonando", "reproductor",
     "laptop", "pc", "nodo", "recuerda", "memoria", "historial",
 ]
 
@@ -205,7 +206,7 @@ class MusicAgent:
             return self._plan("next", [{"type": "next"}])
         if has_any(text, ["anterior", "previo", "previous"]):
             return self._plan("previous", [{"type": "previous"}])
-        if "estado" in text:
+        if "estado" in text or has_any(text, ["sonando", "reproductor"]):
             return self._plan("status", [{"type": "status"}])
 
         query = self.resolve_query(text)
