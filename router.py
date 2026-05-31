@@ -265,7 +265,11 @@ def normalize_text(text: str) -> str:
 
 
 def contains_phrase(text: str, phrase: str) -> bool:
-    return phrase in text
+    phrase = normalize_text(phrase)
+    if not phrase:
+        return False
+    pattern = r"(?<!\w)" + re.escape(phrase) + r"(?!\w)"
+    return re.search(pattern, text) is not None
 
 
 def add_keyword_scores(text: str, score_map: Dict[str, int], words: Dict[str, int]):
@@ -373,7 +377,8 @@ def score_domotica(text: str) -> int:
 
 def score_music_local(text: str) -> int:
     score = compute_keyword_score(text, MUSIC_WORDS)
-    score += compute_keyword_score(text, MUSIC_LOCAL_HINTS)
+    if score > 0:
+        score += compute_keyword_score(text, MUSIC_LOCAL_HINTS)
 
     # Reglas fuertes
     if "reproduce" in text or "musica" in text or "play" in text:
@@ -388,10 +393,11 @@ def score_music_local(text: str) -> int:
 
 def score_music_remote(text: str) -> int:
     score = compute_keyword_score(text, MUSIC_WORDS)
-    score += compute_keyword_score(text, MUSIC_REMOTE_HINTS)
+    if score > 0:
+        score += compute_keyword_score(text, MUSIC_REMOTE_HINTS)
 
-    if any(x in text for x in ["laptop", "pc", "computadora", "notebook", "nodo"]):
-        score += 12
+        if any(x in text for x in ["laptop", "pc", "computadora", "notebook", "nodo"]):
+            score += 12
 
     return score
 
@@ -512,13 +518,15 @@ def route_query(text: str, available_plugins: List[str]) -> str:
         if "critical" in scores:
             scores["critical"] += 20
 
-    # Si explicita dispositivo remoto
-    if any(x in text for x in ["laptop", "pc", "computadora", "notebook", "nodo"]):
+    music_context = has_any_phrase(text, MUSIC_WORDS.keys())
+
+    # Si explicita dispositivo remoto dentro de una orden musical
+    if music_context and any(x in text for x in ["laptop", "pc", "computadora", "notebook", "nodo"]):
         if "music" in scores:
             scores["music"] += 20
 
-    # Si explicita local/móvil
-    if any(x in text for x in ["celular", "android", "telefono", "aca", "este dispositivo"]):
+    # Si explicita local/móvil dentro de una orden musical
+    if music_context and any(x in text for x in ["celular", "android", "telefono", "aca", "este dispositivo"]):
         if "music_local" in scores:
             scores["music_local"] += 20
 
