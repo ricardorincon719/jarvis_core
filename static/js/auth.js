@@ -42,13 +42,14 @@
                         if (mainInterface) mainInterface.classList.add('active');
 
                         await loadPluginsStatus();
-                        await loadBatteryStatus();
+                        await loadAiStatus();
                         await loadNetworkInfo();
                         await loadMusicStatus();
                         await loadDeviceRegistry();
 
                         setInterval(loadNetworkInfo, 10000);
                         setInterval(loadMusicStatus, 5000);
+                        setInterval(loadAiStatus, 10000);
 
                         playAudio('audioWelcome');
                     }, 800);

@@ -15,6 +15,7 @@ import secrets
 import socket
 import time
 from pathlib import Path
+import requests
 from branches.scene_memory import SharedSceneMemory
 from router import is_system_status_request, normalize_text, route_query, update_context
 from flask import Flask, Response, render_template, request, jsonify, stream_with_context
@@ -43,6 +44,17 @@ def load_env_file(path: Path = BASE_DIR / ".env"):
 
 load_env_file()
 
+def env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).lower() in {"1", "true", "yes", "on"}
+
+
+def env_float(name: str, default: str) -> float:
+    try:
+        return float(os.getenv(name, default))
+    except ValueError:
+        return float(default)
+
+
 SECRET_TOKEN = os.getenv("JARVIS_SECRET_TOKEN", "jarvis_local_123")
 CORE_HOST = os.getenv("JARVIS_CORE_HOST", "0.0.0.0")
 CORE_PORT = int(os.getenv("JARVIS_CORE_PORT", "5004"))
@@ -53,6 +65,13 @@ AUTH_MAX_ATTEMPTS = int(os.getenv("JARVIS_AUTH_MAX_ATTEMPTS", "5"))
 AUTH_LOCKOUT_SECONDS = int(os.getenv("JARVIS_AUTH_LOCKOUT_SECONDS", "300"))
 BRANCHES_DIR = Path(os.getenv("JARVIS_BRANCHES_DIR", str(BASE_DIR / "branches")))
 MANIFEST_FILE = Path(os.getenv("JARVIS_MANIFEST_FILE", str(BASE_DIR / "plugin_manifest.json")))
+AI_PROVIDER = os.getenv("JARVIS_AI_PROVIDER", "local").strip().lower() or "local"
+LOCAL_AI_URL = os.getenv("JARVIS_LOCAL_AI_URL", os.getenv("JARVIS_OLLAMA_URL", "http://localhost:11434")).rstrip("/")
+LOCAL_AI_MODEL = os.getenv("JARVIS_LOCAL_AI_MODEL", os.getenv("JARVIS_OLLAMA_MODEL", "qwen2.5:0.5b")).strip()
+CLOUD_AI_ENABLED = env_bool("JARVIS_CLOUD_AI_ENABLED", "false")
+CLOUD_AI_PROVIDER = os.getenv("JARVIS_CLOUD_AI_PROVIDER", "").strip()
+CLOUD_AI_HEALTH_URL = os.getenv("JARVIS_CLOUD_AI_HEALTH_URL", "").strip()
+AI_STATUS_TIMEOUT = env_float("JARVIS_AI_STATUS_TIMEOUT", "2")
 plugins = {}
 plugin_errors = {}
 shared_scene_memory = SharedSceneMemory()
@@ -390,6 +409,134 @@ def build_core_status_response(prompt: str):
         "versions": {name: info["version"] for name, info in plugins.items()},
         "plugin_errors": plugin_errors,
         "scene_memory": scene_summary,
+    }
+
+
+def ollama_model_names(payload):
+    names = []
+    for item in payload.get("models", []):
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name") or item.get("model")
+        if name:
+            names.append(str(name))
+    return names
+
+
+def model_name_matches(candidate: str, expected: str) -> bool:
+    if not candidate or not expected:
+        return False
+    return candidate == expected or candidate.split(":", 1)[0] == expected.split(":", 1)[0]
+
+
+def check_local_ai_status():
+    enabled = "local_ia" in plugins
+    status = {
+        "enabled": enabled,
+        "url": LOCAL_AI_URL,
+        "model": LOCAL_AI_MODEL,
+        "connected": False,
+        "model_available": False,
+        "model_loaded": False,
+        "status": "disabled" if not enabled else "disconnected",
+        "error": None,
+    }
+
+    if not enabled:
+        status["error"] = "plugin local_ia no cargado"
+        return status
+
+    try:
+        tags = requests.get(f"{LOCAL_AI_URL}/api/tags", timeout=AI_STATUS_TIMEOUT)
+        if tags.status_code != 200:
+            status["error"] = f"ollama_http_{tags.status_code}"
+            return status
+
+        status["connected"] = True
+        available_models = ollama_model_names(tags.json())
+        status["model_available"] = any(
+            model_name_matches(name, LOCAL_AI_MODEL)
+            for name in available_models
+        )
+
+        try:
+            running = requests.get(f"{LOCAL_AI_URL}/api/ps", timeout=AI_STATUS_TIMEOUT)
+            if running.status_code == 200:
+                running_models = ollama_model_names(running.json())
+                status["model_loaded"] = any(
+                    model_name_matches(name, LOCAL_AI_MODEL)
+                    for name in running_models
+                )
+        except requests.RequestException:
+            status["model_loaded"] = False
+
+        if status["model_loaded"]:
+            status["status"] = "loaded"
+        elif status["model_available"]:
+            status["status"] = "available"
+        else:
+            status["status"] = "missing_model"
+
+        return status
+    except Exception as e:
+        status["error"] = str(e)
+        return status
+
+
+def check_cloud_ai_status():
+    status = {
+        "enabled": CLOUD_AI_ENABLED,
+        "provider": CLOUD_AI_PROVIDER or None,
+        "health_url": CLOUD_AI_HEALTH_URL or None,
+        "connected": False,
+        "configured": bool(CLOUD_AI_PROVIDER or CLOUD_AI_HEALTH_URL),
+        "status": "disabled",
+        "error": None,
+    }
+
+    if not CLOUD_AI_ENABLED:
+        return status
+
+    if not CLOUD_AI_HEALTH_URL:
+        status["status"] = "configured"
+        return status
+
+    try:
+        response = requests.get(CLOUD_AI_HEALTH_URL, timeout=AI_STATUS_TIMEOUT)
+        status["connected"] = 200 <= response.status_code < 400
+        status["status"] = "connected" if status["connected"] else "error"
+        if not status["connected"]:
+            status["error"] = f"http_{response.status_code}"
+        return status
+    except Exception as e:
+        status["status"] = "error"
+        status["error"] = str(e)
+        return status
+
+
+def build_ai_status_response():
+    local = check_local_ai_status()
+    cloud = check_cloud_ai_status()
+    provider = AI_PROVIDER if AI_PROVIDER in {"local", "cloud", "auto"} else "local"
+
+    if provider == "cloud":
+        active = "cloud"
+        connected = cloud["connected"]
+    elif provider == "auto" and cloud["connected"]:
+        active = "cloud"
+        connected = True
+    else:
+        active = "local"
+        connected = local["connected"]
+
+    return {
+        "success": True,
+        "provider": provider,
+        "active": active,
+        "connected": connected,
+        "local": local,
+        "cloud": cloud,
+        "last_check": int(time.time()),
     }
 
 
@@ -1196,6 +1343,15 @@ def health():
         "scene_memory": shared_scene_memory.summary(),
     })
 
+@app.route("/ai/status", methods=["GET"])
+def ai_status():
+    """Estado de IA local/cloud para la UI."""
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    return jsonify(build_ai_status_response())
+
 @app.route("/network", methods=["GET"])
 def network():
     """Devuelve la IP LAN actual y URLs útiles para la UI."""
@@ -1210,35 +1366,6 @@ def network():
         "lan_url": f"http://{lan_ip}:{CORE_PORT}",
         "port": CORE_PORT
     })
-
-@app.route("/battery", methods=["GET"])
-def battery():
-    """Obtiene el estado de la batería del celular."""
-    acceso = acceso_local_autorizado(request)
-    if acceso is not None:
-        return acceso
-
-    try:
-        import subprocess
-
-        result = subprocess.run(
-            ["termux-battery-status"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-
-        if result.returncode == 0:
-            bat = json.loads(result.stdout)
-            return jsonify({
-                "percentage": bat.get("percentage", 0),
-                "status": bat.get("status", "unknown"),
-            })
-
-        return jsonify({"percentage": 0, "status": "error"})
-    except Exception as e:
-        print(f"Error obteniendo batería: {e}")
-        return jsonify({"percentage": 0, "status": "error"})
 
 
 if __name__ == "__main__":

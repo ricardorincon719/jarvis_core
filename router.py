@@ -210,20 +210,6 @@ TEST_WORDS = {
     "prueba": 9,
 }
 
-TERMUX_API_WORDS = {
-    "termux api": 10,
-    "termux:api": 10,
-    "api termux": 10,
-    "api android": 9,
-    "estado api": 8,
-    "probar api": 8,
-    "reparar api": 9,
-    "levantar api": 9,
-    "termux-volume": 8,
-    "termux-toast": 8,
-    "termux-torch": 8,
-}
-
 SYSTEM_STATUS_PATTERNS = {
     "estado del sistema",
     "estado general",
@@ -249,7 +235,6 @@ BASE_PRIORITIES = {
     "internet": 0,
     "critical": 0,
     "hardware": 0,
-    "termux_api": 0,
     "auth": 0,
 }
 
@@ -428,9 +413,6 @@ def score_hardware(text: str) -> int:
 def score_test(text: str) -> int:
     return compute_keyword_score(text, TEST_WORDS)
 
-def score_termux_api(text: str) -> int:
-    return compute_keyword_score(text, TERMUX_API_WORDS)
-
 def route_query(text: str, available_plugins: List[str]) -> str:
     """
     Devuelve el nombre del plugin más adecuado.
@@ -506,9 +488,6 @@ def route_query(text: str, available_plugins: List[str]) -> str:
     if "test" in available_plugins:
         scores["test"] = score_test(text) + BASE_PRIORITIES["test"]
 
-    if "termux_api" in available_plugins:
-        scores["termux_api"] = score_termux_api(text) + BASE_PRIORITIES["termux_api"]
-
     # -------------------------
     # 3) REGLAS DE SUPREMACÍA
     # -------------------------
@@ -542,15 +521,6 @@ def route_query(text: str, available_plugins: List[str]) -> str:
     if any(x in text for x in ["celular", "android", "telefono", "aca", "este dispositivo"]):
         if "music_local" in scores:
             scores["music_local"] += 20
-
-    # Termux:API solo debe capturar diagnósticos explícitos del puente Android.
-    if "termux" in text and "api" in text:
-        if "termux_api" in scores:
-            scores["termux_api"] += 25
-
-    if "api" in text and any(x in text for x in ["estado", "probar", "reparar", "levantar", "iniciar"]):
-        if "termux_api" in scores:
-            scores["termux_api"] += 15
 
     # -------------------------
     # 4) CONTEXTO EN FRASES AMBIGUAS
