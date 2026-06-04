@@ -2,10 +2,17 @@
 
 ## Roles
 
-- Celular/Termux: core principal de usuario, `core.py`, puerto `5004`.
-- Laptop: nodo pesado, musica `5005`, orchestrator `5006`, Ollama `11434`.
+- PEARL Lite: despliegue completo y portable en un solo equipo.
+- PEARL Hub: cerebro central 24/7; orquestador `5006`, memoria y nodos.
+- PEARL Client: app de control, estado y consentimiento.
+- Celular/Termux actual: despliegue transitorio de PEARL Lite, `core.py`, puerto `5004`.
+- Laptop actual: primer despliegue de PEARL Hub, musica `5005`, orchestrator `5006`, Ollama `11434`.
 - Repo oficial para pruebas y GitHub: `/home/samsung-ubuntu/jarvis_core`.
 - Repo `pearl-home` en laptop: copia historica/de apoyo. No usar como fuente final sin migrar cambios a `jarvis_core`.
+
+La version Beta compartida entre productos es `0.7.0-beta.1`. Cada producto informa su
+edicion y version en su endpoint de salud. Los contratos HTTP mantienen compatibilidad y
+los nuevos contratos estables se publican bajo `/api/v1`.
 
 ## Core movil
 
@@ -37,6 +44,7 @@ Crear `.env` local a partir de `.env.example` y no subirlo a git.
 
 Variables principales:
 
+- `PEARL_PRODUCT`, `PEARL_EDITION` y `PEARL_VERSION`: identidad del despliegue.
 - `JARVIS_SECRET_TOKEN`: token local del core.
 - `JARVIS_CORE_PORT`: puerto del core movil.
 - `JARVIS_MUSIC_HOST` y `JARVIS_MUSIC_PORT`: nodo de musica.

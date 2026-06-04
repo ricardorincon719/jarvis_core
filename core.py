@@ -60,6 +60,10 @@ CORE_HOST = os.getenv("JARVIS_CORE_HOST", "0.0.0.0")
 CORE_PORT = int(os.getenv("JARVIS_CORE_PORT", "5004"))
 CORE_DEBUG = os.getenv("JARVIS_CORE_DEBUG", "false").lower() in {"1", "true", "yes"}
 CORE_DEV_MODE = os.getenv("JARVIS_CORE_DEV_MODE", "false").lower() in {"1", "true", "yes"}
+PEARL_PRODUCT = os.getenv("PEARL_PRODUCT", "PEARL Lite").strip() or "PEARL Lite"
+PEARL_EDITION = os.getenv("PEARL_EDITION", "lite").strip().lower() or "lite"
+PEARL_VERSION = os.getenv("PEARL_VERSION", "0.7.0-beta.1").strip() or "0.7.0-beta.1"
+PEARL_API_VERSION = "v1"
 SESSION_TTL_SECONDS = int(os.getenv("JARVIS_SESSION_TTL_SECONDS", "43200"))
 AUTH_MAX_ATTEMPTS = int(os.getenv("JARVIS_AUTH_MAX_ATTEMPTS", "5"))
 AUTH_LOCKOUT_SECONDS = int(os.getenv("JARVIS_AUTH_LOCKOUT_SECONDS", "300"))
@@ -85,6 +89,15 @@ COMPOUND_CONNECTOR_RE = re.compile(
     r"lampara|lámpara|domotica|domótica|musica|música)\b)",
     re.IGNORECASE,
 )
+
+
+def product_identity():
+    return {
+        "name": PEARL_PRODUCT,
+        "edition": PEARL_EDITION,
+        "version": PEARL_VERSION,
+        "api_version": PEARL_API_VERSION,
+    }
 
 
 def running_in_termux() -> bool:
@@ -405,6 +418,7 @@ def build_core_status_response(prompt: str):
         "cerebro": "Core",
         "plugin": "core_health",
         "status": "online",
+        "product": product_identity(),
         "plugins": loaded_plugins,
         "versions": {name: info["version"] for name, info in plugins.items()},
         "plugin_errors": plugin_errors,
@@ -1329,6 +1343,7 @@ def reject_shared_scene(scene_id):
 
 
 @app.route("/health", methods=["GET"])
+@app.route("/api/v1/health", methods=["GET"])
 def health():
     """Estado del sistema."""
     acceso = acceso_local_autorizado(request)
@@ -1337,6 +1352,7 @@ def health():
 
     return jsonify({
         "status": "online",
+        "product": product_identity(),
         "plugins": len(plugins),
         "versions": {name: info["version"] for name, info in plugins.items()},
         "plugin_errors": plugin_errors,
