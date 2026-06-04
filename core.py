@@ -78,6 +78,8 @@ CLOUD_AI_ENABLED = env_bool("JARVIS_CLOUD_AI_ENABLED", "false")
 CLOUD_AI_PROVIDER = os.getenv("JARVIS_CLOUD_AI_PROVIDER", "").strip()
 CLOUD_AI_HEALTH_URL = os.getenv("JARVIS_CLOUD_AI_HEALTH_URL", "").strip()
 AI_STATUS_TIMEOUT = env_float("JARVIS_AI_STATUS_TIMEOUT", "2")
+HUB_URL = os.getenv("JARVIS_ORCHESTRATOR_URL", "http://jarvis-node.local:5006").rstrip("/")
+HUB_API_TIMEOUT = env_float("PEARL_HUB_API_TIMEOUT", "8")
 plugins = {}
 plugin_errors = {}
 shared_scene_memory = SharedSceneMemory()
@@ -243,6 +245,29 @@ def json_object_or_error(req):
     if not isinstance(data, dict):
         return None, (jsonify({"error": "invalid_json_object"}), 400)
     return data, None
+
+
+def hub_api_response(method: str, path: str, json_data=None, params=None):
+    try:
+        response = requests.request(
+            method,
+            f"{HUB_URL}{path}",
+            json=json_data,
+            params=params,
+            timeout=(3, HUB_API_TIMEOUT),
+        )
+    except requests.RequestException as exc:
+        return jsonify({
+            "status": "error",
+            "error": "hub_unavailable",
+            "detail": str(exc),
+        }), 503
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"status": "error", "error": "invalid_hub_response"}
+    return jsonify(payload), response.status_code
 
 
 # ========== VERIFICACIÓN DE INTEGRIDAD ==========
@@ -1375,6 +1400,37 @@ def reject_shared_scene(scene_id):
     if not scene:
         return jsonify({"error": "scene_not_found"}), 404
     return jsonify({"scene": scene})
+
+
+@app.route("/scene-prompts/pending", methods=["GET"])
+@app.route("/api/v1/scene-prompts/pending", methods=["GET"])
+def hub_scene_prompts_pending():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    return hub_api_response(
+        "GET",
+        "/api/v1/scene-prompts/pending",
+        params=request.args.to_dict(flat=True),
+    )
+
+
+@app.route("/scene-prompts/<prompt_id>/decision", methods=["POST"])
+@app.route("/api/v1/scene-prompts/<prompt_id>/decision", methods=["POST"])
+def hub_scene_prompt_decision(prompt_id):
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
+    return hub_api_response(
+        "POST",
+        f"/api/v1/scene-prompts/{prompt_id}/decision",
+        json_data=data,
+    )
 
 
 @app.route("/health", methods=["GET"])

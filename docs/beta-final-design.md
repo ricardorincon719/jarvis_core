@@ -196,8 +196,8 @@ seran unicos e inmutables.
 
 ### Fase 3: propuestas y decisiones
 
-- crear propuestas persistentes;
-- implementar endpoints idempotentes;
+- crear propuestas persistentes; implementado en Hub;
+- implementar endpoints idempotentes; implementado en Hub y gateway Core;
 - validar aprobacion, descarte y ejecucion confirmada.
 
 ### Fase 4: notificaciones

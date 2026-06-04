@@ -50,6 +50,7 @@ Variables principales:
 - `PEARL_DEVICE_SESSIONS_FILE`: ubicacion privada opcional para sesiones persistentes.
 - `JARVIS_SECRET_TOKEN`: token local del core.
 - `JARVIS_CORE_PORT`: puerto del core movil.
+- `PEARL_HUB_API_TIMEOUT`: timeout de llamadas del Core al Hub.
 - `JARVIS_MUSIC_HOST` y `JARVIS_MUSIC_PORT`: nodo de musica.
 - `JARVIS_ORCHESTRATOR_URL`: orchestrator laptop.
 - `JARVIS_OLLAMA_URL` y `JARVIS_OLLAMA_MODEL`: IA local.
@@ -79,6 +80,18 @@ POST /api/v1/auth/logout
 La interfaz web recuerda el token, lo valida al abrir y vuelve al PIN si fue revocado o
 expiro. El token maestro existente se conserva para compatibilidad y no puede revocarse
 mediante el endpoint de cierre de sesion.
+
+## Gateway de propuestas
+
+Client debe consultar propuestas a traves del Core autorizado. El Core delega al Hub:
+
+```text
+GET  /api/v1/scene-prompts/pending
+POST /api/v1/scene-prompts/<prompt_id>/decision
+```
+
+Si el Hub no esta disponible, el Core responde `503 hub_unavailable`. Aceptar una escena
+candidata solo la aprueba en Hub; no ejecuta musica ni domotica.
 
 ## Verificacion rapida
 
