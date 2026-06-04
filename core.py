@@ -11,12 +11,12 @@ import hmac
 import ipaddress
 import os
 import re
-import secrets
 import socket
 import time
 from pathlib import Path
 import requests
 from branches.scene_memory import SharedSceneMemory
+from device_sessions import DeviceSessionStore
 from router import is_system_status_request, normalize_text, route_query, update_context
 from flask import Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
@@ -64,7 +64,9 @@ PEARL_PRODUCT = os.getenv("PEARL_PRODUCT", "PEARL Lite").strip() or "PEARL Lite"
 PEARL_EDITION = os.getenv("PEARL_EDITION", "lite").strip().lower() or "lite"
 PEARL_VERSION = os.getenv("PEARL_VERSION", "0.7.0-beta.1").strip() or "0.7.0-beta.1"
 PEARL_API_VERSION = "v1"
-SESSION_TTL_SECONDS = int(os.getenv("JARVIS_SESSION_TTL_SECONDS", "43200"))
+SESSION_TTL_SECONDS = int(os.getenv("JARVIS_SESSION_TTL_SECONDS", "2592000"))
+DEVICE_SESSION_MAX = int(os.getenv("PEARL_DEVICE_SESSION_MAX", "100"))
+DEVICE_SESSIONS_FILE = Path(os.getenv("PEARL_DEVICE_SESSIONS_FILE", str(Path.home() / ".local/share/pearl-home/device_sessions.json")))
 AUTH_MAX_ATTEMPTS = int(os.getenv("JARVIS_AUTH_MAX_ATTEMPTS", "5"))
 AUTH_LOCKOUT_SECONDS = int(os.getenv("JARVIS_AUTH_LOCKOUT_SECONDS", "300"))
 BRANCHES_DIR = Path(os.getenv("JARVIS_BRANCHES_DIR", str(BASE_DIR / "branches")))
@@ -79,7 +81,7 @@ AI_STATUS_TIMEOUT = env_float("JARVIS_AI_STATUS_TIMEOUT", "2")
 plugins = {}
 plugin_errors = {}
 shared_scene_memory = SharedSceneMemory()
-api_sessions = {}
+device_session_store = DeviceSessionStore(DEVICE_SESSIONS_FILE, SESSION_TTL_SECONDS, DEVICE_SESSION_MAX)
 auth_failures = {}
 
 COMPOUND_CONNECTOR_RE = re.compile(
@@ -152,29 +154,15 @@ def bearer_token(req) -> str:
 
 
 def cleanup_expired_sessions():
-    now = time.time()
-    expired = [
-        token for token, expires_at in api_sessions.items()
-        if expires_at <= now
-    ]
-    for token in expired:
-        api_sessions.pop(token, None)
+    return device_session_store.prune()
 
 
-def issue_session_token() -> str:
-    cleanup_expired_sessions()
-    token = secrets.token_urlsafe(32)
-    api_sessions[token] = time.time() + SESSION_TTL_SECONDS
-    return token
+def issue_session_token(device_id: str = "", device_name: str = "") -> str:
+    return device_session_store.issue(device_id=device_id, device_name=device_name)
 
 
 def session_token_valido(token: str) -> bool:
-    cleanup_expired_sessions()
-    expires_at = api_sessions.get(token)
-    if not expires_at or expires_at <= time.time():
-        api_sessions.pop(token, None)
-        return False
-    return True
+    return device_session_store.validate(token) is not None
 
 
 def auth_client_key(req) -> str:
@@ -1099,6 +1087,7 @@ def ask_stream():
     }), 404
 
 @app.route("/ask_auth", methods=["POST"])
+@app.route("/api/v1/auth/pin", methods=["POST"])
 def ask_auth():
     acceso = acceso_ip_local(request)
     if acceso is not None:
@@ -1112,6 +1101,8 @@ def ask_auth():
     if error is not None:
         return error
     pin = (data.get("pin") or "").strip()
+    device_id = (data.get("device_id") or auth_client_key(request)).strip()
+    device_name = (data.get("device_name") or "PEARL Client").strip()
 
     try:
         if "auth" not in plugins:
@@ -1126,12 +1117,14 @@ def ask_auth():
 
         if result:
             clear_auth_failures(request)
-            token = issue_session_token()
+            token = issue_session_token(device_id=device_id, device_name=device_name)
+            session = device_session_store.validate(token) or {}
             return jsonify({
                 "success": True,
                 "message": "Acceso concedido, señor.",
                 "token": f"Bearer {token}",
                 "expires_in": SESSION_TTL_SECONDS,
+                "session": session,
             })
 
         record_auth_failure(request)
@@ -1140,6 +1133,48 @@ def ask_auth():
     except Exception as e:
         print(f"Error interno auth: {type(e).__name__}: {e}")
         return jsonify({"success": False, "message": f"Error interno auth: {type(e).__name__}: {e}"}), 500
+
+
+@app.route("/auth/session", methods=["GET"])
+@app.route("/api/v1/auth/session", methods=["GET"])
+def auth_session():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    token = bearer_token(request)
+    if hmac.compare_digest(token, SECRET_TOKEN):
+        return jsonify({
+            "valid": True,
+            "session_type": "master",
+            "product": product_identity(),
+        })
+
+    session = device_session_store.validate(token)
+    if not session:
+        return jsonify({"error": "invalid_or_expired_session"}), 403
+    return jsonify({
+        "valid": True,
+        "session_type": "device",
+        "session": session,
+        "product": product_identity(),
+    })
+
+
+@app.route("/auth/logout", methods=["POST"])
+@app.route("/api/v1/auth/logout", methods=["POST"])
+def auth_logout():
+    acceso = acceso_ip_local(request)
+    if acceso is not None:
+        return acceso
+
+    token = bearer_token(request)
+    if not token or hmac.compare_digest(token, SECRET_TOKEN):
+        return jsonify({"success": False, "error": "device_session_required"}), 400
+    if not device_session_store.revoke(token):
+        return jsonify({"success": False, "error": "invalid_or_expired_session"}), 403
+    return jsonify({"success": True})
+
 
 @app.route("/plugins", methods=["GET"])
 def list_plugins():

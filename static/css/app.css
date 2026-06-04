@@ -389,6 +389,10 @@
             background: rgba(255, 227, 165, 0.06);
         }
 
+        .session-logout {
+            cursor: pointer;
+        }
+
         .status-bar {
             height: var(--status-h);
             flex-shrink: 0;

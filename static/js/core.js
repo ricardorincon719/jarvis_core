@@ -1,9 +1,29 @@
-        let TOKEN = window.PEARL_CONFIG?.token || '';
+        const TOKEN_STORAGE_KEY = 'pearl.device_token';
+        const DEVICE_ID_STORAGE_KEY = 'pearl.device_id';
+        let TOKEN = window.PEARL_CONFIG?.token || localStorage.getItem(TOKEN_STORAGE_KEY) || '';
 
         function setApiToken(token) {
             TOKEN = token || '';
             window.PEARL_CONFIG = window.PEARL_CONFIG || {};
             window.PEARL_CONFIG.token = TOKEN;
+            if (TOKEN) {
+                localStorage.setItem(TOKEN_STORAGE_KEY, TOKEN);
+            } else {
+                localStorage.removeItem(TOKEN_STORAGE_KEY);
+            }
+        }
+
+        function getOrCreateDeviceId() {
+            let deviceId = localStorage.getItem(DEVICE_ID_STORAGE_KEY) || '';
+            if (!deviceId) {
+                if (window.crypto?.randomUUID) {
+                    deviceId = window.crypto.randomUUID();
+                } else {
+                    deviceId = `pearl-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                }
+                localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+            }
+            return deviceId;
         }
 
         const cursor = document.getElementById('cursor');

@@ -190,9 +190,9 @@ seran unicos e inmutables.
 
 ### Fase 2: dispositivo recordado
 
-- reemplazar sesiones en RAM por credenciales revocables;
+- reemplazar sesiones en RAM por credenciales revocables; implementado en Lite/Core;
 - integrar almacenamiento protegido Android;
-- agregar cierre de sesion y revocacion.
+- agregar cierre de sesion y revocacion; implementado en interfaz web.
 
 ### Fase 3: propuestas y decisiones
 

@@ -45,6 +45,9 @@ Crear `.env` local a partir de `.env.example` y no subirlo a git.
 Variables principales:
 
 - `PEARL_PRODUCT`, `PEARL_EDITION` y `PEARL_VERSION`: identidad del despliegue.
+- `JARVIS_SESSION_TTL_SECONDS`: duracion de una sesion recordada; default `2592000` segundos.
+- `PEARL_DEVICE_SESSION_MAX`: cantidad maxima de dispositivos recordados.
+- `PEARL_DEVICE_SESSIONS_FILE`: ubicacion privada opcional para sesiones persistentes.
 - `JARVIS_SECRET_TOKEN`: token local del core.
 - `JARVIS_CORE_PORT`: puerto del core movil.
 - `JARVIS_MUSIC_HOST` y `JARVIS_MUSIC_PORT`: nodo de musica.
@@ -54,6 +57,28 @@ Variables principales:
 - `JARVIS_SCENE_MEMORY_MIN_UNIQUE_DAYS`: dias unicos minimos para escena candidata. Default: `2`.
 - `JARVIS_SCENE_MEMORY_MIN_DATE`: fecha ISO opcional para ignorar eventos anteriores a una correccion fisica/configuracion.
 - `SERPAPI_KEY`: vuelos/internet.
+
+## Sesiones de dispositivo
+
+El PIN sigue siendo obligatorio para autorizar un dispositivo por primera vez. El Core
+entrega un token aleatorio y guarda solamente su hash en:
+
+```text
+~/.local/share/pearl-home/device_sessions.json
+```
+
+Contratos compatibles:
+
+```text
+POST /ask_auth
+POST /api/v1/auth/pin
+GET  /api/v1/auth/session
+POST /api/v1/auth/logout
+```
+
+La interfaz web recuerda el token, lo valida al abrir y vuelve al PIN si fue revocado o
+expiro. El token maestro existente se conserva para compatibilidad y no puede revocarse
+mediante el endpoint de cierre de sesion.
 
 ## Verificacion rapida
 
