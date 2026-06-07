@@ -51,6 +51,8 @@ Variables principales:
 - `JARVIS_SECRET_TOKEN`: token local del core.
 - `JARVIS_CORE_PORT`: puerto del core movil.
 - `PEARL_HUB_API_TIMEOUT`: timeout de llamadas del Core al Hub.
+- `PEARL_CORE_GATEWAY_TOKEN`: secreto opcional compartido con Hub para que decisiones sensibles solo entren por Core.
+- `PEARL_DEVICE_SIGNATURE_MAX_SKEW_SECONDS`: ventana maxima para firmas nativas Android; default `300`.
 - `JARVIS_MUSIC_HOST` y `JARVIS_MUSIC_PORT`: nodo de musica.
 - `JARVIS_ORCHESTRATOR_URL`: orchestrator laptop.
 - `JARVIS_OLLAMA_URL` y `JARVIS_OLLAMA_MODEL`: IA local.
@@ -78,12 +80,15 @@ POST /api/v1/auth/logout
 ```
 
 La interfaz web recuerda el token, lo valida al abrir y vuelve al PIN si fue revocado o
-expiro. El token maestro existente se conserva para compatibilidad y no puede revocarse
-mediante el endpoint de cierre de sesion.
+expiro. En Android, el WebView registra una clave publica generada con Keystore; los
+workers nativos firman cada consulta/decision de propuestas con esa identidad. El token
+maestro existente se conserva para compatibilidad y no puede revocarse mediante el
+endpoint de cierre de sesion.
 
 ## Gateway de propuestas
 
-Client debe consultar propuestas a traves del Core autorizado. El Core delega al Hub:
+Client debe consultar propuestas a traves del Core autorizado. Android usa sesion
+persistente mas firma nativa; no debe llamar directo al Hub. El Core delega al Hub:
 
 ```text
 GET  /api/v1/scene-prompts/pending
@@ -91,7 +96,15 @@ POST /api/v1/scene-prompts/<prompt_id>/decision
 ```
 
 Si el Hub no esta disponible, el Core responde `503 hub_unavailable`. Aceptar una escena
-candidata solo la aprueba en Hub; no ejecuta musica ni domotica.
+candidata solo la aprueba en Hub; no ejecuta musica ni domotica. Para acceso remoto con
+ngrok, expone el Core `:5004`, no el Hub `:5006`, por ejemplo:
+
+```bash
+ngrok http 5004
+```
+
+Si defines `PEARL_CORE_GATEWAY_TOKEN` con el mismo valor en Core y Hub, el Hub rechazara
+decisiones directas que no incluyan el header interno enviado por Core.
 
 ## Verificacion rapida
 

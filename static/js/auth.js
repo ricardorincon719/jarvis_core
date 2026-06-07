@@ -31,6 +31,7 @@
             if (!TOKEN) return;
             try {
                 await apiFetch('/api/v1/auth/session');
+                setApiToken(TOKEN);
                 await openAuthenticatedInterface(false);
             } catch (err) {
                 console.warn('Sesión recordada no válida:', err);
@@ -69,13 +70,19 @@
             }
 
             try {
+                const nativeIdentity = getNativeDeviceIdentity();
+                const authPayload = {
+                    pin,
+                    device_id: nativeIdentity.device_id || getOrCreateDeviceId(),
+                    device_name: nativeIdentity.device_name || 'PEARL Web Client'
+                };
+                if (nativeIdentity.device_public_key) {
+                    authPayload.device_public_key = nativeIdentity.device_public_key;
+                }
+
                 const data = await apiFetch('/ask_auth', {
                     method: 'POST',
-                    body: JSON.stringify({
-                        pin,
-                        device_id: getOrCreateDeviceId(),
-                        device_name: 'PEARL Web Client'
-                    })
+                    body: JSON.stringify(authPayload)
                 });
 
                 if (data.success) {

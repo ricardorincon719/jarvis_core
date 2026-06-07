@@ -2,6 +2,27 @@
         const DEVICE_ID_STORAGE_KEY = 'pearl.device_id';
         let TOKEN = window.PEARL_CONFIG?.token || localStorage.getItem(TOKEN_STORAGE_KEY) || '';
 
+        function notifyNativeSessionToken(token) {
+            try {
+                if (window.PearlAndroid?.onSessionToken) {
+                    window.PearlAndroid.onSessionToken(token || '');
+                }
+            } catch (err) {
+                console.warn('No se pudo sincronizar sesión nativa:', err);
+            }
+        }
+
+        function getNativeDeviceIdentity() {
+            try {
+                if (!window.PearlAndroid?.getDeviceIdentity) return {};
+                const identity = JSON.parse(window.PearlAndroid.getDeviceIdentity() || '{}');
+                return identity && typeof identity === 'object' ? identity : {};
+            } catch (err) {
+                console.warn('Identidad nativa no disponible:', err);
+                return {};
+            }
+        }
+
         function setApiToken(token) {
             TOKEN = token || '';
             window.PEARL_CONFIG = window.PEARL_CONFIG || {};
@@ -11,6 +32,7 @@
             } else {
                 localStorage.removeItem(TOKEN_STORAGE_KEY);
             }
+            notifyNativeSessionToken(TOKEN);
         }
 
         function getOrCreateDeviceId() {

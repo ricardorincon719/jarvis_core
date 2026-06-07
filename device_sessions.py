@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class DeviceSessionStore:
@@ -25,12 +25,13 @@ class DeviceSessionStore:
         self.now_fn = now_fn
         self._lock = threading.Lock()
 
-    def issue(self, device_id: str = "", device_name: str = "") -> str:
+    def issue(self, device_id: str = "", device_name: str = "", device_public_key: str = "") -> str:
         token = secrets.token_urlsafe(32)
         now = self.now_fn()
         session = {
             "device_id": self._clean(device_id, "unknown", 120),
             "device_name": self._clean(device_name, "PEARL Client", 120),
+            "device_public_key": self._clean(device_public_key, "", 4096),
             "created_at": now,
             "expires_at": now + self.ttl_seconds,
         }

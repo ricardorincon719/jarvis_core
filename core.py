@@ -6,6 +6,7 @@ El core solo orquesta, nunca ejecuta comandos peligrosos.
 
 import json
 import importlib
+import base64
 import hashlib
 import hmac
 import ipaddress
@@ -20,6 +21,16 @@ from device_sessions import DeviceSessionStore
 from router import is_system_status_request, normalize_text, route_query, update_context
 from flask import Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
+
+try:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+except ImportError:  # pragma: no cover - depends on deployment environment
+    InvalidSignature = None
+    hashes = None
+    serialization = None
+    padding = None
 
 app = Flask(__name__)
 CORS(app)
@@ -80,11 +91,14 @@ CLOUD_AI_HEALTH_URL = os.getenv("JARVIS_CLOUD_AI_HEALTH_URL", "").strip()
 AI_STATUS_TIMEOUT = env_float("JARVIS_AI_STATUS_TIMEOUT", "2")
 HUB_URL = os.getenv("JARVIS_ORCHESTRATOR_URL", "http://jarvis-node.local:5006").rstrip("/")
 HUB_API_TIMEOUT = env_float("PEARL_HUB_API_TIMEOUT", "8")
+HUB_GATEWAY_TOKEN = os.getenv("PEARL_CORE_GATEWAY_TOKEN", "").strip()
+DEVICE_SIGNATURE_MAX_SKEW_SECONDS = int(os.getenv("PEARL_DEVICE_SIGNATURE_MAX_SKEW_SECONDS", "300"))
 plugins = {}
 plugin_errors = {}
 shared_scene_memory = SharedSceneMemory()
 device_session_store = DeviceSessionStore(DEVICE_SESSIONS_FILE, SESSION_TTL_SECONDS, DEVICE_SESSION_MAX)
 auth_failures = {}
+device_signature_nonces = {}
 
 COMPOUND_CONNECTOR_RE = re.compile(
     r"\s+(?:y|e|tambien|también|ademas|además|luego|despues|después)\s+"
@@ -159,12 +173,23 @@ def cleanup_expired_sessions():
     return device_session_store.prune()
 
 
-def issue_session_token(device_id: str = "", device_name: str = "") -> str:
-    return device_session_store.issue(device_id=device_id, device_name=device_name)
+def issue_session_token(device_id: str = "", device_name: str = "", device_public_key: str = "") -> str:
+    return device_session_store.issue(
+        device_id=device_id,
+        device_name=device_name,
+        device_public_key=device_public_key,
+    )
 
 
 def session_token_valido(token: str) -> bool:
     return device_session_store.validate(token) is not None
+
+
+def current_device_session(req):
+    token = bearer_token(req)
+    if not token or hmac.compare_digest(token, SECRET_TOKEN):
+        return None
+    return device_session_store.validate(token)
 
 
 def auth_client_key(req) -> str:
@@ -247,14 +272,123 @@ def json_object_or_error(req):
     return data, None
 
 
-def hub_api_response(method: str, path: str, json_data=None, params=None):
+def request_signing_path(req) -> str:
+    query = req.query_string.decode("utf-8", errors="ignore")
+    return f"{req.path}?{query}" if query else req.path
+
+
+def request_body_hash(req) -> str:
+    return hashlib.sha256(req.get_data(cache=True) or b"").hexdigest()
+
+
+def device_signing_payload(req, timestamp: str, nonce: str) -> str:
+    return "\n".join([
+        req.method.upper(),
+        request_signing_path(req),
+        timestamp,
+        nonce,
+        request_body_hash(req),
+    ])
+
+
+def prune_device_signature_nonces(now: float):
+    cutoff = now - DEVICE_SIGNATURE_MAX_SKEW_SECONDS
+    expired = [key for key, seen_at in device_signature_nonces.items() if seen_at < cutoff]
+    for key in expired:
+        device_signature_nonces.pop(key, None)
+
+
+def validate_device_signature(req, session: dict):
+    if serialization is None or padding is None or hashes is None:
+        return jsonify({"error": "device_signature_unavailable"}), 503
+
+    device_id = (req.headers.get("X-PEARL-Device-Id") or "").strip()
+    timestamp = (req.headers.get("X-PEARL-Timestamp") or "").strip()
+    nonce = (req.headers.get("X-PEARL-Nonce") or "").strip()
+    signature_value = (req.headers.get("X-PEARL-Signature") or "").strip()
+    public_key_value = (session.get("device_public_key") or "").strip()
+
+    if not all((device_id, timestamp, nonce, signature_value, public_key_value)):
+        return jsonify({"error": "device_signature_required"}), 403
+    if device_id != (session.get("device_id") or ""):
+        return jsonify({"error": "device_session_mismatch"}), 403
+
+    try:
+        signed_at = int(timestamp)
+    except ValueError:
+        return jsonify({"error": "invalid_device_timestamp"}), 403
+
+    now = time.time()
+    if abs(now - signed_at) > DEVICE_SIGNATURE_MAX_SKEW_SECONDS:
+        return jsonify({"error": "device_signature_expired"}), 403
+
+    prune_device_signature_nonces(now)
+    nonce_key = f"{device_id}:{nonce}"
+    if nonce_key in device_signature_nonces:
+        return jsonify({"error": "device_signature_replay"}), 403
+
+    try:
+        public_key = serialization.load_der_public_key(base64.b64decode(public_key_value))
+        signature = base64.b64decode(signature_value)
+        public_key.verify(
+            signature,
+            device_signing_payload(req, timestamp, nonce).encode("utf-8"),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+    except (ValueError, TypeError, InvalidSignature):
+        return jsonify({"error": "invalid_device_signature"}), 403
+
+    device_signature_nonces[nonce_key] = now
+    return None
+
+
+def scene_prompt_gateway_access(req):
+    acceso = acceso_local_autorizado(req)
+    if acceso is not None:
+        return None, acceso
+
+    token = bearer_token(req)
+    if hmac.compare_digest(token, SECRET_TOKEN):
+        return {"session_type": "master"}, None
+
+    session = current_device_session(req)
+    if not session:
+        return None, (jsonify({"error": "invalid_or_expired_session"}), 403)
+
+    signature_error = validate_device_signature(req, session)
+    if signature_error is not None:
+        return None, signature_error
+
+    return {"session_type": "device", "session": session}, None
+
+
+def hub_gateway_headers(session_context=None):
+    headers = {}
+    if HUB_GATEWAY_TOKEN:
+        headers["X-PEARL-Core-Gateway"] = HUB_GATEWAY_TOKEN
+    session = (session_context or {}).get("session") or {}
+    if session:
+        headers["X-PEARL-Device-Id"] = session.get("device_id", "")
+        headers["X-PEARL-Device-Name"] = session.get("device_name", "")
+    return {key: value for key, value in headers.items() if value}
+
+
+def hub_api_response(method: str, path: str, json_data=None, params=None, session_context=None):
+    request_kwargs = {
+        "json": json_data,
+        "params": params,
+        "timeout": (3, HUB_API_TIMEOUT),
+    }
+    headers = hub_gateway_headers(session_context)
+    if headers:
+        request_kwargs["headers"] = headers
+
     try:
         response = requests.request(
             method,
             f"{HUB_URL}{path}",
-            json=json_data,
-            params=params,
-            timeout=(3, HUB_API_TIMEOUT),
+            **request_kwargs,
         )
     except requests.RequestException as exc:
         return jsonify({
@@ -1128,6 +1262,7 @@ def ask_auth():
     pin = (data.get("pin") or "").strip()
     device_id = (data.get("device_id") or auth_client_key(request)).strip()
     device_name = (data.get("device_name") or "PEARL Client").strip()
+    device_public_key = (data.get("device_public_key") or "").strip()
 
     try:
         if "auth" not in plugins:
@@ -1142,7 +1277,11 @@ def ask_auth():
 
         if result:
             clear_auth_failures(request)
-            token = issue_session_token(device_id=device_id, device_name=device_name)
+            token = issue_session_token(
+                device_id=device_id,
+                device_name=device_name,
+                device_public_key=device_public_key,
+            )
             session = device_session_store.validate(token) or {}
             return jsonify({
                 "success": True,
@@ -1405,7 +1544,7 @@ def reject_shared_scene(scene_id):
 @app.route("/scene-prompts/pending", methods=["GET"])
 @app.route("/api/v1/scene-prompts/pending", methods=["GET"])
 def hub_scene_prompts_pending():
-    acceso = acceso_local_autorizado(request)
+    session_context, acceso = scene_prompt_gateway_access(request)
     if acceso is not None:
         return acceso
 
@@ -1413,13 +1552,14 @@ def hub_scene_prompts_pending():
         "GET",
         "/api/v1/scene-prompts/pending",
         params=request.args.to_dict(flat=True),
+        session_context=session_context,
     )
 
 
 @app.route("/scene-prompts/<prompt_id>/decision", methods=["POST"])
 @app.route("/api/v1/scene-prompts/<prompt_id>/decision", methods=["POST"])
 def hub_scene_prompt_decision(prompt_id):
-    acceso = acceso_local_autorizado(request)
+    session_context, acceso = scene_prompt_gateway_access(request)
     if acceso is not None:
         return acceso
 
@@ -1430,6 +1570,7 @@ def hub_scene_prompt_decision(prompt_id):
         "POST",
         f"/api/v1/scene-prompts/{prompt_id}/decision",
         json_data=data,
+        session_context=session_context,
     )
 
 
