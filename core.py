@@ -70,7 +70,6 @@ SECRET_TOKEN = os.getenv("JARVIS_SECRET_TOKEN", "jarvis_local_123")
 CORE_HOST = os.getenv("JARVIS_CORE_HOST", "0.0.0.0")
 CORE_PORT = int(os.getenv("JARVIS_CORE_PORT", "5004"))
 CORE_DEBUG = os.getenv("JARVIS_CORE_DEBUG", "false").lower() in {"1", "true", "yes"}
-CORE_DEV_MODE = os.getenv("JARVIS_CORE_DEV_MODE", "false").lower() in {"1", "true", "yes"}
 PEARL_PRODUCT = os.getenv("PEARL_PRODUCT", "PEARL Lite").strip() or "PEARL Lite"
 PEARL_EDITION = os.getenv("PEARL_EDITION", "lite").strip().lower() or "lite"
 PEARL_VERSION = os.getenv("PEARL_VERSION", "0.7.0-beta.1").strip() or "0.7.0-beta.1"
@@ -116,21 +115,6 @@ def product_identity():
         "version": PEARL_VERSION,
         "api_version": PEARL_API_VERSION,
     }
-
-
-def running_in_termux() -> bool:
-    return Path("/data/data/com.termux/files/home").exists()
-
-
-def guard_core_execution():
-    """Evita arrancar el core móvil como servicio accidental en laptop."""
-    if running_in_termux() or CORE_DEV_MODE:
-        return
-
-    print("JARVIS CORE no se arrancó.")
-    print("Este repo es la copia del core móvil. En laptop úsalo para revisar, editar y probar.")
-    print("Para prueba explícita: JARVIS_CORE_DEV_MODE=true .venv/bin/python core.py")
-    raise SystemExit(2)
 
 
 # ========== SEGURIDAD ==========
@@ -1617,7 +1601,6 @@ def network():
 
 
 if __name__ == "__main__":
-    guard_core_execution()
     load_plugins()
     print("\n🚀 JARVIS CORE iniciado")
     print(f"   🌐 http://localhost:{CORE_PORT}")

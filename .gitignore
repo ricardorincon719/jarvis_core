@@ -10,3 +10,4 @@ memory/
 .cache/
 *.sqlite3
 .pytest_cache/
+*.bak

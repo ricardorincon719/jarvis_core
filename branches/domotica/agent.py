@@ -152,7 +152,8 @@ class DomoticaAgent:
 
     def build_plan(self, prompt: str) -> Dict:
         text = normalize_text(prompt)
-        device_name = self._resolve_device_name(text)
+        device_names = self._resolve_device_names(text)
+        device_name = device_names[0] if device_names else DEVICE_NAME
 
         if self._is_memory_query(text):
             return self._plan("memory_summary", [{"type": "memory_summary"}])
@@ -198,6 +199,10 @@ class DomoticaAgent:
         brightness_percent = self._parse_percent(text, ["brillo", "intensidad"])
         temp_percent = self._parse_percent(text, ["temperatura"])
 
+        multi_scene_actions = self._parse_multi_device_scene_actions(text)
+        if len(multi_scene_actions) > 1:
+            return self._plan("apply_composite_lighting_scene", multi_scene_actions)
+
         if scene:
             if brightness_percent is not None and scene.get("mode") == "white":
                 scene["brightness"] = percent_to_brightness(brightness_percent)
@@ -205,7 +210,15 @@ class DomoticaAgent:
                 scene["temp"] = percent_to_temp(temp_percent)
             return self._plan(
                 f"apply_{scene_name}",
-                [{"type": "apply_scene", "device": device_name, "scene_name": scene_name, "scene": scene}],
+                [
+                    {
+                        "type": "apply_scene",
+                        "device": target,
+                        "scene_name": scene_name,
+                        "scene": deepcopy(scene),
+                    }
+                    for target in device_names
+                ],
             )
 
         if brightness_percent is not None and is_light_target(text):
@@ -415,27 +428,92 @@ class DomoticaAgent:
             scene["color"] = dps.get("24")
         return scene
 
-    def _resolve_device_name(self, text: str) -> str:
+    def _device_aliases(self, name: str, cfg: Dict) -> set:
+        aliases = {
+            normalize_text(name),
+            normalize_compact(name),
+            normalize_text(str(cfg.get("label") or "")),
+            normalize_compact(str(cfg.get("label") or "")),
+            normalize_text(str(cfg.get("room") or "")),
+        }
+        aliases.update(part for alias in list(aliases) for part in alias.split("_") if len(part) >= 3)
+        aliases.difference_update({"lamp", "light", "tuya", "luz", "luces", "lampara", "foco"})
+        aliases.discard("")
+        return aliases
+
+    def _matching_device_names(self, text: str) -> List[str]:
         try:
             devices = self.service.devices()
         except Exception:
-            return DEVICE_NAME
+            return []
 
+        matches = []
         for name, cfg in devices.items():
-            aliases = {
-                normalize_text(name),
-                normalize_compact(name),
-                normalize_text(str(cfg.get("label") or "")),
-                normalize_compact(str(cfg.get("label") or "")),
-                normalize_text(str(cfg.get("room") or "")),
-            }
-            aliases.update(part for alias in list(aliases) for part in alias.split("_") if len(part) >= 3)
-            aliases.difference_update({"lamp", "light", "tuya", "luz", "luces", "lampara", "foco"})
-            aliases.discard("")
+            aliases = self._device_aliases(name, cfg)
             if any(alias and alias in text for alias in aliases):
-                return name
+                matches.append(name)
+        return matches
 
-        return DEVICE_NAME
+    def _resolve_device_names(self, text: str) -> List[str]:
+        matches = self._matching_device_names(text)
+        if matches:
+            return matches
+
+        collective = has_any(
+            text,
+            [
+                "ambas lamparas",
+                "las dos lamparas",
+                "todas las lamparas",
+                "todas las luces",
+                "ambas luces",
+            ],
+        )
+        if collective:
+            try:
+                devices = self.service.devices()
+            except Exception:
+                devices = {}
+            light_names = [
+                name
+                for name, cfg in devices.items()
+                if cfg.get("type") == "light" or "light" in (cfg.get("capabilities") or [])
+            ]
+            if light_names:
+                return light_names
+
+        return [DEVICE_NAME]
+
+    def _resolve_device_name(self, text: str) -> str:
+        return self._resolve_device_names(text)[0]
+
+    def _parse_multi_device_scene_actions(self, text: str) -> List[Dict]:
+        actions = []
+        seen = set()
+        parts = [
+            part.strip()
+            for part in re.split(r"\b(?:y|e|ademas|tambien)\b|[,;]+", text)
+            if part.strip()
+        ]
+
+        for part in parts:
+            scene_name, scene = self._parse_scene(part)
+            if not scene:
+                continue
+            for device in self._matching_device_names(part):
+                if device in seen:
+                    continue
+                actions.append(
+                    {
+                        "type": "apply_scene",
+                        "device": device,
+                        "scene_name": scene_name,
+                        "scene": scene,
+                    }
+                )
+                seen.add(device)
+
+        return actions
 
     def _devices_response(self, devices: Dict, plan: Dict) -> Dict:
         total = len(devices)
@@ -620,7 +698,9 @@ class DomoticaAgent:
         ip = first.get("ip") if isinstance(first, dict) else None
         intent = plan.get("intent") or "domotica"
 
-        if intent.startswith("apply_"):
+        if intent == "apply_composite_lighting_scene":
+            answer = "Escena compuesta aplicada a las lamparas"
+        elif intent.startswith("apply_"):
             answer = f"Escena {intent.replace('apply_', '')} aplicada"
         elif intent == "turn_on":
             answer = "Luz encendida"

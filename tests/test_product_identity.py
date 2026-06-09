@@ -22,6 +22,10 @@ class ProductIdentityTest(unittest.TestCase):
         self.assertEqual(identity["api_version"], "v1")
         self.assertTrue(identity["version"].startswith("0.7.0-beta."))
 
+    def test_core_has_no_laptop_execution_guard(self):
+        self.assertFalse(hasattr(core, "guard_core_execution"))
+        self.assertFalse(hasattr(core, "CORE_DEV_MODE"))
+
     def test_versioned_health_alias_preserves_authorization(self):
         response = self.client.get("/api/v1/health", headers=self.headers)
         payload = response.get_json()
@@ -29,6 +33,7 @@ class ProductIdentityTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(payload["status"], "online")
         self.assertEqual(payload["product"]["edition"], "lite")
+
     def test_device_session_can_be_validated_and_revoked_via_api(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = DeviceSessionStore(Path(temp_dir) / "sessions.json", ttl_seconds=100)

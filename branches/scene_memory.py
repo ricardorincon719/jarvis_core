@@ -129,37 +129,86 @@ def _brightness_bucket(value) -> str:
     return "high"
 
 
-def _scene_signature(event: Dict) -> Tuple[str, str, str, str, str, str, str]:
+def _event_lights(event: Dict) -> List[Dict]:
+    light_actions = event.get("light_actions")
+    if isinstance(light_actions, list):
+        return [item for item in light_actions if isinstance(item, dict)]
+
+    lights = event.get("lights")
+    if isinstance(lights, list):
+        return [item for item in lights if isinstance(item, dict)]
+    if isinstance(lights, dict):
+        return [lights]
+    return []
+
+
+def _light_signature(light: Dict, include_device: bool = True) -> str:
+    scene = light.get("scene") or {}
+    parts = []
+    if include_device:
+        parts.append(_normalize_text(light.get("device")))
+    parts.extend(
+        [
+            _normalize_text(light.get("scene_name")),
+            _normalize_text(scene.get("mode")),
+            _brightness_bucket(scene.get("brightness")),
+        ]
+    )
+    return "|".join(parts)
+
+
+def _scene_signature(event: Dict) -> Tuple[str, ...]:
     music = event.get("music") or {}
-    lights = event.get("lights") or {}
-    light_scene = lights.get("scene") or {}
+    lights = _event_lights(event)
     dt = _parse_time(event.get("timestamp"))
     genre_or_query = music.get("genre") or music.get("query")
 
+    # Preserve signatures already stored by single-light installations.
+    if "light_actions" not in event and len(lights) == 1:
+        light = lights[0]
+        scene = light.get("scene") or {}
+        return (
+            _normalize_text(music.get("target")),
+            _normalize_text(genre_or_query),
+            _normalize_text(light.get("device")),
+            _normalize_text(light.get("scene_name")),
+            _normalize_text(scene.get("mode")),
+            _brightness_bucket(scene.get("brightness")),
+            _time_window(dt),
+        )
+
+    light_signatures = sorted(_light_signature(light) for light in lights)
     return (
         _normalize_text(music.get("target")),
         _normalize_text(genre_or_query),
-        _normalize_text(lights.get("device")),
-        _normalize_text(lights.get("scene_name")),
-        _normalize_text(light_scene.get("mode")),
-        _brightness_bucket(light_scene.get("brightness")),
+        *light_signatures,
         _time_window(dt),
     )
 
 
-def _scene_family_signature(event: Dict) -> Tuple[str, str, str, str]:
+def _scene_family_signature(event: Dict) -> Tuple[str, ...]:
     music = event.get("music") or {}
-    lights = event.get("lights") or {}
-    light_scene = lights.get("scene") or {}
+    lights = _event_lights(event)
     genre_or_query = music.get("genre") or music.get("query")
 
+    if "light_actions" not in event and len(lights) == 1:
+        light = lights[0]
+        scene = light.get("scene") or {}
+        return (
+            _normalize_text(genre_or_query),
+            _normalize_text(light.get("scene_name")),
+            _normalize_text(scene.get("mode")),
+            _brightness_bucket(scene.get("brightness")),
+        )
+
+    light_signatures = sorted(
+        _light_signature(light, include_device=False)
+        for light in lights
+    )
     return (
         _normalize_text(genre_or_query),
-        _normalize_text(lights.get("scene_name")),
-        _normalize_text(light_scene.get("mode")),
-        _brightness_bucket(light_scene.get("brightness")),
+        *light_signatures,
     )
-
 
 def _stored_signature(scene: Dict) -> Optional[Tuple[str, ...]]:
     signature = scene.get("signature")
@@ -171,20 +220,42 @@ def _stored_signature(scene: Dict) -> Optional[Tuple[str, ...]]:
 def _build_scene_from_group(signature: Tuple[str, ...], events: List[Dict]) -> Dict:
     latest = max(events, key=lambda item: item.get("timestamp", ""))
     latest_music = latest.get("music") or {}
-    latest_lights = latest.get("lights") or {}
-    latest_light_scene = latest_lights.get("scene") or {}
+    latest_lights = _event_lights(latest)
     scene_id = "scene_" + uuid.uuid4().hex[:12]
     music_target = _normalize_text(latest_music.get("target"))
     music_key = _normalize_text(latest_music.get("genre") or latest_music.get("query"))
-    light_device = _normalize_text(latest_lights.get("device"))
-    scene_name = _normalize_text(latest_lights.get("scene_name"))
-    light_mode = _normalize_text(latest_light_scene.get("mode"))
-    brightness_bucket = _brightness_bucket(latest_light_scene.get("brightness"))
     time_window = _time_window(_parse_time(latest.get("timestamp")))
+
+    light_actions = []
+    light_labels = []
+    light_metadata = []
+    for light in latest_lights:
+        scene = light.get("scene") or {}
+        device = _normalize_text(light.get("device"))
+        scene_name = _normalize_text(light.get("scene_name"))
+        light_actions.append(
+            {
+                "domain": "domotica",
+                "plugin": light.get("plugin"),
+                "type": "apply_scene",
+                "device": device,
+                "scene_name": scene_name,
+                "scene": scene,
+            }
+        )
+        light_labels.append(f"{scene_name} en {device}")
+        light_metadata.append(
+            {
+                "device": device,
+                "scene_name": scene_name,
+                "mode": _normalize_text(scene.get("mode")),
+                "brightness_bucket": _brightness_bucket(scene.get("brightness")),
+            }
+        )
 
     return {
         "id": scene_id,
-        "name": f"{music_key} + luz {scene_name} en {time_window}",
+        "name": f"{music_key} + luces {' + '.join(light_labels)} en {time_window}",
         "status": "candidate",
         "confidence": min(0.95, round(0.45 + (len(events) * 0.07), 2)),
         "evidence_count": len(events),
@@ -206,14 +277,7 @@ def _build_scene_from_group(signature: Tuple[str, ...], events: List[Dict]) -> D
                 "query": latest_music.get("query"),
                 "genre": latest_music.get("genre"),
             },
-            {
-                "domain": "domotica",
-                "plugin": latest_lights.get("plugin"),
-                "type": "apply_scene",
-                "device": light_device,
-                "scene_name": scene_name,
-                "scene": latest_lights.get("scene") or {},
-            },
+            *light_actions,
         ],
         "safety": {
             "requires_confirmation": True,
@@ -224,12 +288,10 @@ def _build_scene_from_group(signature: Tuple[str, ...], events: List[Dict]) -> D
         "execution_count": 0,
         "last_confirmed_at": None,
         "metadata": {
-            "light_mode": light_mode,
-            "brightness_bucket": brightness_bucket,
+            "lights": light_metadata,
             "source": "jarvis_core.compound_dispatch",
         },
     }
-
 
 def _extract_music_step(step: Dict) -> Optional[Dict]:
     plugin = step.get("plugin")
@@ -252,14 +314,17 @@ def _extract_music_step(step: Dict) -> Optional[Dict]:
     return None
 
 
-def _extract_light_step(step: Dict) -> Optional[Dict]:
+def _extract_light_steps(step: Dict) -> List[Dict]:
     if step.get("plugin") != "domotica":
-        return None
+        return []
 
     plan = ((step.get("debug") or {}).get("plan") or {})
+    lights = []
     for action in plan.get("actions") or []:
-        if action.get("type") == "apply_scene":
-            return {
+        if action.get("type") != "apply_scene":
+            continue
+        lights.append(
+            {
                 "plugin": "domotica",
                 "device": action.get("device"),
                 "action": "apply_scene",
@@ -268,7 +333,8 @@ def _extract_light_step(step: Dict) -> Optional[Dict]:
                 "prompt": step.get("compound_prompt"),
                 "response": step.get("respuesta"),
             }
-    return None
+        )
+    return lights
 
 
 class SharedSceneMemory:
@@ -283,12 +349,12 @@ class SharedSceneMemory:
             return {"recorded": False, "reason": "compound_not_ok"}
 
         music_step = None
-        light_step = None
+        light_steps = []
         for step in result.get("steps") or []:
             music_step = music_step or _extract_music_step(step)
-            light_step = light_step or _extract_light_step(step)
+            light_steps.extend(_extract_light_steps(step))
 
-        if not music_step or not light_step:
+        if not music_step or not light_steps:
             return {"recorded": False, "reason": "missing_music_or_light"}
 
         event = {
@@ -297,7 +363,8 @@ class SharedSceneMemory:
             "prompt": original_prompt,
             "dispatch": dispatch,
             "music": music_step,
-            "lights": light_step,
+            "lights": light_steps[0],
+            "light_actions": light_steps,
             "source": "jarvis_core.compound_dispatch",
         }
 
@@ -442,12 +509,12 @@ class SharedSceneMemory:
             if min_dt and _parse_time(event.get("timestamp")) < min_dt:
                 continue
             signature = _scene_signature(event)
-            if "unknown" in signature[:5]:
+            if any("unknown" in str(part) for part in signature[:-1]):
                 continue
             grouped[signature].append(event)
 
             family_signature = ("family",) + _scene_family_signature(event)
-            if "unknown" not in family_signature[1:4]:
+            if not any("unknown" in str(part) for part in family_signature[1:]):
                 grouped[family_signature].append(event)
 
         created = []

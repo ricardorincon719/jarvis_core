@@ -23,14 +23,24 @@ cd ~/JARVIS_CORE
 python core.py
 ```
 
-## Prueba del core en laptop
+## Core en laptop Hub
 
-El core no arranca en laptop por accidente. Para una prueba explicita:
+El Core se ejecuta como servicio persistente `systemd --user` porque este equipo es el Hub principal:
 
 ```bash
 cd /home/samsung-ubuntu/jarvis_core
-JARVIS_CORE_DEV_MODE=true /home/samsung-ubuntu/pearl-home/.venv/bin/python core.py
+./scripts/install_core_service.sh
 ```
+
+Operaciones:
+
+```bash
+systemctl --user status pearl-core.service
+systemctl --user restart pearl-core.service
+journalctl --user -u pearl-core.service -f
+```
+
+La unidad usa `.venv/bin/python`, reinicia el Core automaticamente y carga la configuracion desde el `.env` local mediante `core.py`. La autenticacion de clientes, sesiones y tokens permanece activa.
 
 Health check:
 
