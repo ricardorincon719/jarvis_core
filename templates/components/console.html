@@ -26,6 +26,16 @@
                             </div>
                         </div>
 
+                        <div id="speechVoicePanel" class="speech-voice-panel" hidden>
+                            <label for="speechVoiceSelect">Voz de PEARL</label>
+                            <select
+                                id="speechVoiceSelect"
+                                aria-label="Seleccionar voz de PEARL"
+                            ></select>
+                            <button id="speechVoicePreview" type="button">Probar</button>
+                            <span id="speechVoiceStatus" aria-live="polite"></span>
+                        </div>
+
                         <div id="input-area">
                             <input
                                 type="text"
@@ -33,6 +43,14 @@
                                 placeholder="Escribe una orden..."
                                 onkeypress="handleKey(event)"
                             >
+                            <button
+                                id="voiceBtn"
+                                type="button"
+                                title="Hablar con JARVIS"
+                                aria-label="Hablar con JARVIS"
+                                onclick="startVoiceCommand()"
+                                hidden
+                            >🎙</button>
                             <button id="sendBtn" onclick="sendMessage()">▶</button>
                             <button id="clearBtn" onclick="clearChat()">🗑</button>
                         </div>

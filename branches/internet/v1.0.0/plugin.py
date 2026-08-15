@@ -280,7 +280,7 @@ def handle(prompt):
                     f"{i}. {v['aerolinea']} {v['num_vuelo']}\n"
                     f"   💰 BRL {v['precio']:.2f} | ⏱️ {v['duracion']} min | ✈️ {escalas_txt}\n"
                     f"   🛫 {v['salida']} → 🛬 {v['llegada']}\n"
-                    f"   🔗 <a href='{v['enlace']}' target='_blank'>Abrir en Google Flights</a>\n\n"
+                    f"   🔗 {v['enlace']}\n\n"
                 )
             
             respuesta += "💡 Precios en tiempo real de Google Flights. Abre el enlace para comprar."

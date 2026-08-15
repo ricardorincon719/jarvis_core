@@ -14,10 +14,26 @@ import os
 import re
 import socket
 import time
+import uuid
 from pathlib import Path
 import requests
-from branches.scene_memory import SharedSceneMemory
+from action_proposals import (
+    ActionProposalStore,
+    ProposalAccessDenied,
+    ProposalNotFound,
+    ProposalStateError,
+    canonical_hash,
+)
+from action_policy import (
+    LEVEL_BLOCKED,
+    LEVEL_CONFIRM,
+    LEVEL_RESPOND_ONLY,
+    LEVEL_SAFE,
+    blocked_prompt_reason,
+    classify_plan,
+)
 from device_sessions import DeviceSessionStore
+from nova_event_bus import NovaEventBus
 from router import is_system_status_request, normalize_text, route_query, update_context
 from flask import Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
@@ -55,6 +71,9 @@ def load_env_file(path: Path = BASE_DIR / ".env"):
 
 load_env_file()
 
+from branches.scene_memory import SharedSceneMemory
+
+
 def env_bool(name: str, default: str = "false") -> bool:
     return os.getenv(name, default).lower() in {"1", "true", "yes", "on"}
 
@@ -82,9 +101,21 @@ AUTH_LOCKOUT_SECONDS = int(os.getenv("JARVIS_AUTH_LOCKOUT_SECONDS", "300"))
 BRANCHES_DIR = Path(os.getenv("JARVIS_BRANCHES_DIR", str(BASE_DIR / "branches")))
 MANIFEST_FILE = Path(os.getenv("JARVIS_MANIFEST_FILE", str(BASE_DIR / "plugin_manifest.json")))
 AI_PROVIDER = os.getenv("JARVIS_AI_PROVIDER", "local").strip().lower() or "local"
-LOCAL_AI_URL = os.getenv("JARVIS_LOCAL_AI_URL", os.getenv("JARVIS_OLLAMA_URL", "http://localhost:11434")).rstrip("/")
-LOCAL_AI_MODEL = os.getenv("JARVIS_LOCAL_AI_MODEL", os.getenv("JARVIS_OLLAMA_MODEL", "qwen2.5:0.5b")).strip()
-CLOUD_AI_ENABLED = env_bool("JARVIS_CLOUD_AI_ENABLED", "false")
+OPENROUTER_API_URL = os.getenv(
+    "OPENROUTER_API_URL",
+    "https://openrouter.ai/api/v1",
+).rstrip("/")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_MODEL = os.getenv(
+    "OPENROUTER_MODEL",
+    "deepseek/deepseek-v4-flash",
+).strip()
+OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "").strip()
+OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "PEARL HOME").strip()
+# Se conservan estos alias internos para no romper el contrato de /ai/status.
+LOCAL_AI_URL = OPENROUTER_API_URL
+LOCAL_AI_MODEL = OPENROUTER_MODEL
+CLOUD_AI_ENABLED = env_bool("JARVIS_CLOUD_AI_ENABLED", "true")
 CLOUD_AI_PROVIDER = os.getenv("JARVIS_CLOUD_AI_PROVIDER", "").strip()
 CLOUD_AI_HEALTH_URL = os.getenv("JARVIS_CLOUD_AI_HEALTH_URL", "").strip()
 AI_STATUS_TIMEOUT = env_float("JARVIS_AI_STATUS_TIMEOUT", "2")
@@ -92,12 +123,49 @@ HUB_URL = os.getenv("JARVIS_ORCHESTRATOR_URL", "http://jarvis-node.local:5006").
 HUB_API_TIMEOUT = env_float("PEARL_HUB_API_TIMEOUT", "8")
 HUB_GATEWAY_TOKEN = os.getenv("PEARL_CORE_GATEWAY_TOKEN", "").strip()
 DEVICE_SIGNATURE_MAX_SKEW_SECONDS = int(os.getenv("PEARL_DEVICE_SIGNATURE_MAX_SKEW_SECONDS", "300"))
+ACTION_PROPOSAL_TTL_SECONDS = int(os.getenv("PEARL_ACTION_PROPOSAL_TTL_SECONDS", "180"))
+ACTION_PROPOSALS_FILE = Path(os.getenv(
+    "PEARL_ACTION_PROPOSALS_FILE",
+    str(Path.home() / ".local/share/pearl-home/action_proposals.json"),
+))
+NOVA_ENABLED = env_bool("PEARL_NOVA_ENABLED", "false")
+NOVA_URL = os.getenv("PEARL_NOVA_URL", "http://127.0.0.1:5010").rstrip("/")
+NOVA_EVENT_DB = Path(os.path.expanduser(os.getenv(
+    "PEARL_NOVA_EVENT_DB",
+    "~/.local/share/pearl-home/nova_event_bus.db",
+)))
+NOVA_EVENT_TIMEOUT = env_float("PEARL_NOVA_EVENT_TIMEOUT_SECONDS", "5")
+NOVA_EVENT_RETRY = env_float("PEARL_NOVA_EVENT_RETRY_SECONDS", "15")
 plugins = {}
 plugin_errors = {}
 shared_scene_memory = SharedSceneMemory()
 device_session_store = DeviceSessionStore(DEVICE_SESSIONS_FILE, SESSION_TTL_SECONDS, DEVICE_SESSION_MAX)
+action_proposal_store = ActionProposalStore(ACTION_PROPOSALS_FILE, ACTION_PROPOSAL_TTL_SECONDS)
 auth_failures = {}
 device_signature_nonces = {}
+_nova_event_bus = None
+
+ACTION_ACCEPT_PHRASES = {
+    "si",
+    "confirmo",
+    "confirmar",
+    "confirma",
+    "si confirmo",
+    "si confirmar",
+    "si confirma",
+    "si hazlo",
+    "si por favor",
+}
+ACTION_CANCEL_PHRASES = {
+    "no",
+    "cancelar",
+    "cancela",
+    "cancelalo",
+    "rechazar",
+    "rechaza",
+    "rechazo",
+    "no lo hagas",
+}
 
 COMPOUND_CONNECTOR_RE = re.compile(
     r"\s+(?:y|e|tambien|también|ademas|además|luego|despues|después)\s+"
@@ -106,6 +174,43 @@ COMPOUND_CONNECTOR_RE = re.compile(
     r"lampara|lámpara|domotica|domótica|musica|música)\b)",
     re.IGNORECASE,
 )
+
+
+def get_nova_event_bus():
+    global _nova_event_bus
+    configured = app.config.get("NOVA_EVENT_BUS")
+    if configured is not None:
+        return configured
+    if not NOVA_ENABLED:
+        return None
+    if _nova_event_bus is None:
+        _nova_event_bus = NovaEventBus(
+            NOVA_EVENT_DB,
+            NOVA_URL,
+            timeout_seconds=NOVA_EVENT_TIMEOUT,
+            retry_seconds=NOVA_EVENT_RETRY,
+        )
+    return _nova_event_bus
+
+
+@app.after_request
+def publish_compound_event_to_nova(response):
+    """Observar respuestas compuestas sin alterar su resultado ni ejecución."""
+    if request.method != "POST" or request.path not in {"/ask", "/ask_stream"}:
+        return response
+    try:
+        payload = response.get_json(silent=True)
+        if not isinstance(payload, dict) or not payload.get("compound"):
+            return response
+        request_payload = request.get_json(silent=True) or {}
+        prompt = request_payload.get("pregunta", "")
+        event_bus = get_nova_event_bus()
+        if event_bus is not None:
+            event_bus.publish_compound_response(prompt, payload)
+    except Exception:
+        # Nova es observador: nunca puede afectar el resultado de PEARL.
+        return response
+    return response
 
 
 def product_identity():
@@ -522,6 +627,349 @@ def execute_plugin(plugin_name: str, prompt: str):
     return response
 
 
+def action_requester(req) -> dict:
+    token = bearer_token(req)
+    if token and hmac.compare_digest(token, SECRET_TOKEN):
+        return {"type": "master", "id": "master", "name": "PEARL master token"}
+
+    session = current_device_session(req) or {}
+    return {
+        "type": "device",
+        "id": session.get("device_id") or auth_client_key(req),
+        "name": session.get("device_name") or "PEARL Client",
+    }
+
+
+def build_plugin_plan(plugin_name: str, prompt: str):
+    if plugin_name not in plugins:
+        return None
+    module = plugins[plugin_name]["module"]
+    if not hasattr(module, "build_plan") or not hasattr(module, "execute_confirmed_plan"):
+        return None
+    plan = module.build_plan(prompt)
+    if not isinstance(plan, dict):
+        raise ValueError("plugin_plan_must_be_object")
+    return plan
+
+
+def summarize_plugin_plan(plugin_name: str, plan: dict) -> str:
+    labels = []
+    for action in plan.get("actions") or []:
+        if not isinstance(action, dict):
+            continue
+        action_type = action.get("type") or "accion"
+        device = action.get("device")
+        scene_name = action.get("scene_name")
+        query = action.get("query")
+        detail = scene_name or query or device
+        labels.append(f"{action_type}: {detail}" if detail else str(action_type))
+    detail = ", ".join(labels) or (plan.get("intent") or "accion")
+    return f"{plugin_name}: {detail}"
+
+
+def create_proposal_response(kind: str, envelope: dict, summary: str, req):
+    proposal = action_proposal_store.create(
+        kind=kind,
+        plan=envelope,
+        summary=summary,
+        requester=action_requester(req),
+    )
+    public = action_proposal_store.public(proposal)
+    return {
+        "respuesta": f"Necesito tu confirmacion para ejecutar: {summary}.",
+        "cerebro": "Core",
+        "plugin": envelope.get("plugin") or kind,
+        "status": "confirmation_required",
+        "action_level": LEVEL_CONFIRM,
+        "requires_confirmation": True,
+        "proposal": public,
+    }
+
+
+def blocked_action_response(reason: str, plugin_name: str = "core"):
+    return {
+        "respuesta": "Esta accion esta bloqueada por la politica de seguridad de PEARL.",
+        "cerebro": "Core",
+        "plugin": plugin_name,
+        "status": "blocked",
+        "action_level": LEVEL_BLOCKED,
+        "reason": reason,
+        "requires_confirmation": False,
+    }
+
+
+def maybe_handle_plugin_plan(plugin_name: str, prompt: str, req):
+    plan = build_plugin_plan(plugin_name, prompt)
+    if not plan:
+        return None
+    level = classify_plan(plugin_name, plan)
+    if level == LEVEL_RESPOND_ONLY:
+        return None
+    envelope = {
+        "kind": "plugin_plan",
+        "plugin": plugin_name,
+        "prompt": prompt,
+        "plan": plan,
+    }
+    if level == LEVEL_BLOCKED:
+        return blocked_action_response("accion_no_permitida", plugin_name)
+    if level == LEVEL_CONFIRM:
+        plan["requires_confirmation"] = True
+        return create_proposal_response(
+            "plugin_plan",
+            envelope,
+            summarize_plugin_plan(plugin_name, plan),
+            req,
+        )
+
+    plan["requires_confirmation"] = False
+    response = execute_confirmed_plugin_plan(envelope)
+    response["action_level"] = LEVEL_SAFE
+    response["requires_confirmation"] = False
+    return response
+
+
+def maybe_propose_compound_action(dispatch: list, original_prompt: str, req):
+    planned_steps = []
+    highest_level = LEVEL_RESPOND_ONLY
+    for item in dispatch:
+        plan = build_plugin_plan(item["plugin"], item["prompt"])
+        if plan is None:
+            return None
+        level = classify_plan(item["plugin"], plan)
+        highest_level = max(highest_level, level)
+        plan["requires_confirmation"] = level == LEVEL_CONFIRM
+        planned_steps.append({
+            "plugin": item["plugin"],
+            "domain": item.get("domain"),
+            "prompt": item["prompt"],
+            "plan": plan,
+        })
+
+    if highest_level == LEVEL_RESPOND_ONLY:
+        return None
+    summary = " | ".join(
+        summarize_plugin_plan(item["plugin"], item["plan"])
+        for item in planned_steps
+    )
+    envelope = {
+        "kind": "compound_plan",
+        "plugin": "compound",
+        "prompt": original_prompt,
+        "steps": planned_steps,
+    }
+    if highest_level == LEVEL_BLOCKED:
+        return blocked_action_response("plan_compuesto_no_permitido", "compound")
+    if highest_level == LEVEL_CONFIRM:
+        return create_proposal_response("compound_plan", envelope, summary, req)
+
+    response = execute_confirmed_compound(envelope)
+    response["action_level"] = LEVEL_SAFE
+    response["requires_confirmation"] = False
+    return response
+
+
+def maybe_propose_shared_scene(prompt: str, req):
+    query = extract_shared_scene_activation(prompt)
+    if query is None:
+        return None
+    scene = shared_scene_memory.find_scene(query)
+    if not scene or scene.get("status") != "approved":
+        return None
+    preflight = shared_scene_needs_music_confirmation(scene, prompt)
+    if preflight:
+        return preflight
+    envelope = {
+        "kind": "shared_scene",
+        "plugin": "domotica",
+        "prompt": prompt,
+        "scene_id": scene.get("id"),
+        "scene_actions_hash": canonical_hash(scene.get("actions") or []),
+    }
+    return create_proposal_response(
+        "shared_scene",
+        envelope,
+        f"activar escena {scene.get('name') or scene.get('id')}",
+        req,
+    )
+
+
+def execute_confirmed_plugin_plan(envelope: dict):
+    plugin_name = envelope.get("plugin")
+    if plugin_name not in plugins:
+        raise ValueError("proposal_plugin_unavailable")
+    module = plugins[plugin_name]["module"]
+    if not hasattr(module, "execute_confirmed_plan"):
+        raise ValueError("proposal_execution_not_supported")
+    response = module.execute_confirmed_plan(envelope.get("plan") or {}, envelope.get("prompt") or "")
+    if not isinstance(response, dict):
+        response = {"respuesta": str(response), "cerebro": plugin_name}
+    response["plugin"] = plugin_name
+    response["version"] = plugins[plugin_name]["version"]
+    update_context(plugin_name, envelope.get("prompt") or "")
+    return response
+
+
+def compound_result(steps: list, dispatch: list, original_prompt: str):
+    def step_ok(step):
+        if step.get("error"):
+            return False
+        if "ok" in step and not bool(step.get("ok")):
+            return False
+        nested_status = step.get("status")
+        return not (isinstance(nested_status, dict) and nested_status.get("status") == "error")
+
+    result = {
+        "respuesta": " | ".join(
+            str(step.get("respuesta") or step.get("message") or step.get("plugin"))
+            for step in steps
+        ),
+        "cerebro": "Core",
+        "plugin": "compound",
+        "compound": True,
+        "ok": all(step_ok(step) for step in steps),
+        "steps": steps,
+    }
+    try:
+        memory_result = shared_scene_memory.record_compound_result(
+            original_prompt,
+            dispatch,
+            result,
+        )
+        result["scene_memory"] = memory_result
+        if memory_result.get("candidates_created"):
+            result["respuesta"] += ". Detecte un nuevo patron de escena y lo deje como candidato."
+    except Exception as exc:
+        result["scene_memory"] = {"recorded": False, "error": str(exc)}
+    return result
+
+
+def execute_confirmed_compound(envelope: dict):
+    steps = []
+    dispatch = []
+    for item in envelope.get("steps") or []:
+        response = execute_confirmed_plugin_plan(item)
+        response["compound_prompt"] = item.get("prompt")
+        steps.append(response)
+        dispatch.append({
+            "plugin": item.get("plugin"),
+            "domain": item.get("domain"),
+            "prompt": item.get("prompt"),
+        })
+    return compound_result(steps, dispatch, envelope.get("prompt") or "")
+
+
+def execute_confirmed_proposal(proposal: dict):
+    envelope = proposal.get("plan") or {}
+    kind = proposal.get("kind") or envelope.get("kind")
+    if kind == "plugin_plan":
+        return execute_confirmed_plugin_plan(envelope)
+    if kind == "compound_plan":
+        return execute_confirmed_compound(envelope)
+    if kind == "shared_scene":
+        scene = shared_scene_memory.find_scene(envelope.get("scene_id") or "")
+        if not scene or scene.get("status") != "approved":
+            raise ValueError("proposal_scene_unavailable")
+        if canonical_hash(scene.get("actions") or []) != envelope.get("scene_actions_hash"):
+            raise ValueError("proposal_scene_changed")
+        return execute_shared_scene(scene, envelope.get("prompt") or "")
+    raise ValueError("proposal_kind_not_supported")
+
+
+def action_result_succeeded(result: dict) -> bool:
+    if result.get("error") or result.get("ok") is False:
+        return False
+    status = result.get("status")
+    return not (isinstance(status, dict) and status.get("status") == "error")
+
+
+def apply_action_decision(proposal_id: str, decision: str, idempotency_key: str, requester: dict):
+    try:
+        proposal, changed = action_proposal_store.claim(
+            proposal_id=proposal_id,
+            decision=decision,
+            idempotency_key=idempotency_key,
+            requester=requester,
+        )
+    except ProposalNotFound as exc:
+        return {"status": "error", "error": str(exc)}, 404
+    except ProposalAccessDenied as exc:
+        return {"status": "error", "error": str(exc)}, 403
+    except ProposalStateError as exc:
+        return {"status": "error", "error": str(exc)}, 409
+    except ValueError as exc:
+        return {"status": "error", "error": str(exc)}, 400
+
+    if not changed:
+        public = action_proposal_store.public(proposal)
+        return {
+            "status": public.get("status"),
+            "idempotent": True,
+            "proposal": public,
+            "result": public.get("result"),
+        }, 200
+
+    if proposal.get("decision") == "cancel":
+        public = action_proposal_store.public(proposal)
+        return {
+            "status": "cancelled",
+            "respuesta": "Accion cancelada. No se ejecuto ningun cambio.",
+            "proposal": public,
+        }, 200
+
+    try:
+        result = execute_confirmed_proposal(proposal)
+        if not isinstance(result, dict):
+            result = {"respuesta": str(result)}
+        success = action_result_succeeded(result)
+    except Exception as exc:
+        result = {
+            "respuesta": f"No pude ejecutar la accion confirmada: {exc}",
+            "error": str(exc),
+            "ok": False,
+        }
+        success = False
+
+    completed = action_proposal_store.complete(proposal_id, result, success)
+    public = action_proposal_store.public(completed)
+    return {
+        "status": public.get("status"),
+        "respuesta": result.get("respuesta") or result.get("message"),
+        "proposal": public,
+        "result": result,
+    }, 200 if success else 422
+
+
+def natural_action_decision(prompt: str):
+    normalized = normalize_text(prompt)
+    if normalized in ACTION_ACCEPT_PHRASES:
+        return "accept"
+    if normalized in ACTION_CANCEL_PHRASES:
+        return "cancel"
+    return None
+
+
+def maybe_handle_natural_action_decision(prompt: str, req):
+    decision = natural_action_decision(prompt)
+    if decision is None:
+        return None
+
+    requester = action_requester(req)
+    pending = action_proposal_store.list_pending(requester, include_all_for_master=False)
+    if not pending:
+        return None
+
+    proposal = pending[-1]
+    payload, status_code = apply_action_decision(
+        proposal_id=proposal["id"],
+        decision=decision,
+        idempotency_key="natural-" + uuid.uuid4().hex,
+        requester=requester,
+    )
+    payload["natural_confirmation"] = True
+    return payload, status_code
+
+
 def build_core_status_response(prompt: str):
     scene_summary = shared_scene_memory.summary()
     loaded_plugins = sorted(plugins.keys())
@@ -557,12 +1005,13 @@ def build_core_status_response(prompt: str):
     }
 
 
-def ollama_model_names(payload):
+def openrouter_model_names(payload):
     names = []
-    for item in payload.get("models", []):
+    models = payload.get("data", payload.get("models", []))
+    for item in models:
         if not isinstance(item, dict):
             continue
-        name = item.get("name") or item.get("model")
+        name = item.get("id") or item.get("name") or item.get("model")
         if name:
             names.append(str(name))
     return names
@@ -574,12 +1023,69 @@ def model_name_matches(candidate: str, expected: str) -> bool:
     return candidate == expected or candidate.split(":", 1)[0] == expected.split(":", 1)[0]
 
 
+def openrouter_headers():
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    if OPENROUTER_SITE_URL:
+        headers["HTTP-Referer"] = OPENROUTER_SITE_URL
+    if OPENROUTER_APP_NAME:
+        headers["X-Title"] = OPENROUTER_APP_NAME
+    return headers
+
+
 def check_local_ai_status():
     enabled = "local_ia" in plugins
+    if NOVA_ENABLED:
+        status = {
+            "enabled": enabled,
+            "provider": "jinnex-next",
+            "url": NOVA_URL,
+            "model": "nova-2.0.1",
+            "configured": True,
+            "connected": False,
+            "model_available": False,
+            "model_loaded": False,
+            "status": "disabled" if not enabled else "disconnected",
+            "error": None,
+            "fallback_provider": "openrouter",
+            "fallback_configured": bool(OPENROUTER_API_KEY),
+        }
+        if not enabled:
+            status["error"] = "plugin local_ia no cargado"
+            return status
+        try:
+            response = requests.get(
+                f"{NOVA_URL}/health",
+                timeout=AI_STATUS_TIMEOUT,
+            )
+            if response.status_code != 200:
+                status["error"] = f"nova_http_{response.status_code}"
+                return status
+            payload = response.json()
+            connected = (
+                isinstance(payload, dict)
+                and payload.get("status") == "ok"
+                and payload.get("nova") == "connected"
+            )
+            status["connected"] = connected
+            status["model_available"] = connected
+            status["model_loaded"] = connected
+            status["status"] = "connected" if connected else "error"
+            if not connected:
+                status["error"] = "nova_not_ready"
+            return status
+        except Exception as exc:
+            status["error"] = str(exc)
+            return status
+
     status = {
         "enabled": enabled,
+        "provider": "openrouter",
         "url": LOCAL_AI_URL,
         "model": LOCAL_AI_MODEL,
+        "configured": bool(OPENROUTER_API_KEY),
         "connected": False,
         "model_available": False,
         "model_loaded": False,
@@ -591,36 +1097,28 @@ def check_local_ai_status():
         status["error"] = "plugin local_ia no cargado"
         return status
 
+    if not OPENROUTER_API_KEY:
+        status["status"] = "not_configured"
+        status["error"] = "OPENROUTER_API_KEY no configurada"
+        return status
+
     try:
-        tags = requests.get(f"{LOCAL_AI_URL}/api/tags", timeout=AI_STATUS_TIMEOUT)
-        if tags.status_code != 200:
-            status["error"] = f"ollama_http_{tags.status_code}"
+        models = requests.get(
+            f"{LOCAL_AI_URL}/models",
+            headers=openrouter_headers(),
+            timeout=AI_STATUS_TIMEOUT,
+        )
+        if models.status_code != 200:
+            status["error"] = f"openrouter_http_{models.status_code}"
             return status
 
         status["connected"] = True
-        available_models = ollama_model_names(tags.json())
+        available_models = openrouter_model_names(models.json())
         status["model_available"] = any(
             model_name_matches(name, LOCAL_AI_MODEL)
             for name in available_models
         )
-
-        try:
-            running = requests.get(f"{LOCAL_AI_URL}/api/ps", timeout=AI_STATUS_TIMEOUT)
-            if running.status_code == 200:
-                running_models = ollama_model_names(running.json())
-                status["model_loaded"] = any(
-                    model_name_matches(name, LOCAL_AI_MODEL)
-                    for name in running_models
-                )
-        except requests.RequestException:
-            status["model_loaded"] = False
-
-        if status["model_loaded"]:
-            status["status"] = "loaded"
-        elif status["model_available"]:
-            status["status"] = "available"
-        else:
-            status["status"] = "missing_model"
+        status["status"] = "available" if status["model_available"] else "missing_model"
 
         return status
     except Exception as e:
@@ -1101,9 +1599,18 @@ def ask():
     if not pregunta:
         return jsonify({"respuesta": "Mensaje vacío", "cerebro": "Core"})
 
+    blocked_reason = blocked_prompt_reason(pregunta)
+    if blocked_reason:
+        return jsonify(blocked_action_response(blocked_reason))
+
     print(f"\n📨 Consulta: {pregunta}")
     print("REMOTE_ADDR:", request.remote_addr)
     print("HOST:", request.host)
+
+    natural_decision = maybe_handle_natural_action_decision(pregunta, request)
+    if natural_decision is not None:
+        payload, status_code = natural_decision
+        return jsonify(payload), status_code
 
     if is_system_status_request(normalize_text(pregunta)):
         return jsonify(build_core_status_response(pregunta))
@@ -1115,11 +1622,18 @@ def ask():
         print("   🧩 Comando compuesto:")
         for item in compound_dispatch:
             print(f"      - {item['plugin']}: {item['prompt']}")
+        proposal = maybe_propose_compound_action(compound_dispatch, pregunta, request)
+        if proposal is not None:
+            return jsonify(proposal)
         return jsonify(execute_compound_dispatch(compound_dispatch, original_prompt=pregunta))
 
     plugin_name = route_query(pregunta, available_plugins)
 
     if plugin_name == "domotica":
+        proposal = maybe_propose_shared_scene(pregunta, request)
+        if proposal is not None:
+            update_context("domotica", pregunta)
+            return jsonify(proposal)
         shared_scene_response = handle_shared_scene_command(pregunta)
         if shared_scene_response is not None:
             update_context("domotica", pregunta)
@@ -1132,6 +1646,10 @@ def ask():
         module = plugin_info["module"]
 
         try:
+            planned_response = maybe_handle_plugin_plan(plugin_name, pregunta, request)
+            if planned_response is not None:
+                update_context(plugin_name, pregunta)
+                return jsonify(planned_response)
             return jsonify(execute_plugin(plugin_name, pregunta))
 
         except Exception as e:
@@ -1163,9 +1681,18 @@ def ask_stream():
     if not pregunta:
         return jsonify({"respuesta": "Mensaje vacío", "cerebro": "Core"}), 400
 
+    blocked_reason = blocked_prompt_reason(pregunta)
+    if blocked_reason:
+        return jsonify(blocked_action_response(blocked_reason))
+
     print(f"\n📨 Consulta streaming: {pregunta}")
     print("REMOTE_ADDR:", request.remote_addr)
     print("HOST:", request.host)
+
+    natural_decision = maybe_handle_natural_action_decision(pregunta, request)
+    if natural_decision is not None:
+        payload, status_code = natural_decision
+        return jsonify(payload), status_code
 
     if is_system_status_request(normalize_text(pregunta)):
         return jsonify(build_core_status_response(pregunta))
@@ -1177,11 +1704,18 @@ def ask_stream():
         print("   🧩 Comando compuesto streaming:")
         for item in compound_dispatch:
             print(f"      - {item['plugin']}: {item['prompt']}")
+        proposal = maybe_propose_compound_action(compound_dispatch, pregunta, request)
+        if proposal is not None:
+            return jsonify(proposal)
         return jsonify(execute_compound_dispatch(compound_dispatch, original_prompt=pregunta))
 
     plugin_name = route_query(pregunta, available_plugins)
 
     if plugin_name == "domotica":
+        proposal = maybe_propose_shared_scene(pregunta, request)
+        if proposal is not None:
+            update_context("domotica", pregunta)
+            return jsonify(proposal)
         shared_scene_response = handle_shared_scene_command(pregunta)
         if shared_scene_response is not None:
             update_context("domotica", pregunta)
@@ -1194,11 +1728,15 @@ def ask_stream():
         module = plugin_info["module"]
 
         try:
+            planned_response = maybe_handle_plugin_plan(plugin_name, pregunta, request)
+            if planned_response is not None:
+                update_context(plugin_name, pregunta)
+                return jsonify(planned_response)
             if hasattr(module, "handle_stream"):
                 update_context(plugin_name, pregunta)
                 return Response(
                     stream_with_context(module.handle_stream(pregunta)),
-                    mimetype="application/x-ndjson",
+                    content_type="application/x-ndjson; charset=utf-8",
                     headers={
                         "Cache-Control": "no-cache",
                         "X-Accel-Buffering": "no",
@@ -1369,6 +1907,37 @@ def list_domotica_devices():
     if not hasattr(module, "list_devices"):
         return jsonify({"error": "domotica_devices_not_supported"}), 501
     return jsonify({"devices": module.list_devices()})
+
+
+@app.route("/devices/status", methods=["GET"])
+def list_domotica_device_statuses():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    module = get_domotica_module()
+    if not hasattr(module, "list_device_statuses"):
+        return jsonify({"error": "domotica_status_not_supported"}), 501
+    return jsonify({"statuses": module.list_device_statuses()})
+
+
+@app.route("/devices/<device_name>/local-key", methods=["PUT"])
+def update_domotica_device_local_key(device_name):
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
+    module = get_domotica_module()
+    if not hasattr(module, "update_device_local_key"):
+        return jsonify({"error": "domotica_relink_not_supported"}), 501
+    try:
+        return jsonify(module.update_device_local_key(device_name, data.get("local_key") or ""))
+    except ValueError as exc:
+        status = 404 if str(exc) == "device_not_found" else 400
+        return jsonify({"error": str(exc)}), status
 
 
 @app.route("/devices/candidates", methods=["GET"])
@@ -1556,6 +2125,37 @@ def hub_scene_prompt_decision(prompt_id):
         json_data=data,
         session_context=session_context,
     )
+
+
+@app.route("/actions/pending", methods=["GET"])
+@app.route("/api/v1/actions/pending", methods=["GET"])
+def pending_action_proposals():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+    proposals = action_proposal_store.list_pending(action_requester(request))
+    return jsonify({
+        "status": "success",
+        "proposals": [action_proposal_store.public(item) for item in proposals],
+    })
+
+
+@app.route("/actions/<proposal_id>/decision", methods=["POST"])
+@app.route("/api/v1/actions/<proposal_id>/decision", methods=["POST"])
+def decide_action_proposal(proposal_id):
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
+    payload, status_code = apply_action_decision(
+        proposal_id=proposal_id,
+        decision=data.get("decision"),
+        idempotency_key=data.get("idempotency_key"),
+        requester=action_requester(request),
+    )
+    return jsonify(payload), status_code
 
 
 @app.route("/health", methods=["GET"])

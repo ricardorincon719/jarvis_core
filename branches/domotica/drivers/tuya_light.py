@@ -631,6 +631,36 @@ class TuyaLightDriver:
             _, ip, st = self._get_working(force_discovery=False, rid=rid)
             return {"ok": True, "ip": ip, "status": st}
 
+    def probe_status(self, rid=None):
+        """Consulta rápida para UI: no ejecuta discovery ni devuelve cache como estado real."""
+        with self.device_lock:
+            candidates = [self.default_ip, self._get_cached_ip()]
+            last_error = "device_unreachable"
+            last_code = None
+            last_ip = None
+            for ip in dict.fromkeys(value for value in candidates if value):
+                last_ip = ip
+                st = self._safe_status(self._build_device(ip), rid)
+                if self._is_valid_status(st):
+                    self._update_cache_with_state(ip, st)
+                    return {"ok": True, "ip": ip, "status": st}
+                if isinstance(st, dict):
+                    last_code = st.get("Err")
+                    last_error = st.get("Error") or f"tuya_err_{last_code}"
+                    if str(last_code) == "904":
+                        return {
+                            "ok": False,
+                            "ip": ip,
+                            "error": last_error,
+                            "error_code": last_code,
+                        }
+            return {
+                "ok": False,
+                "ip": last_ip,
+                "error": last_error,
+                "error_code": last_code,
+            }
+
     def turn_on(self, rid=None):
         with self.device_lock:
             base = self._get_cached_current_state() or {}

@@ -32,6 +32,19 @@
             return ['switch'];
         }
 
+        function deviceRuntimeStatus(name) {
+            return activeDeviceStatuses?.[name] || null;
+        }
+
+        function deviceStateLabel(name) {
+            const status = deviceRuntimeStatus(name);
+            if (!status) return 'COMPROBANDO';
+            if (status.state === 'on') return 'ENCENDIDA';
+            if (status.state === 'off') return 'APAGADA';
+            if (status.needs_relink) return 'REQUIERE CLAVE';
+            return 'SIN CONEXIÓN';
+        }
+
         function preferredDeviceOrder(entries) {
             const rank = (name, cfg) => {
                     const value = `${normalizeDeviceText(name)} ${normalizeDeviceText(cfg?.type)}`;
@@ -71,10 +84,11 @@
                 const label = cfg.label || name;
                 const isActive = name === activeLightName;
                 const type = cfg.type || 'device';
+                const runtime = deviceStateLabel(name);
                 return `
                     <button class="light-select-btn ${isActive ? 'active' : ''}" onclick="selectLight('${encodeURIComponent(name)}')">
                         <strong>${escapeHtml(label)}</strong>
-                        <span>${escapeHtml(type)} · ${escapeHtml(name)} · ${escapeHtml(cfg.ip || 'sin IP')}</span>
+                        <span>${escapeHtml(type)} · ${escapeHtml(runtime)} · ${escapeHtml(cfg.ip || 'sin IP')}</span>
                     </button>
                 `;
             }).join('');
@@ -82,7 +96,8 @@
             const cfg = activeLightDevices[activeLightName] || {};
             const label = cfg.label || activeLightName;
             const target = deviceTargetPhrase(activeLightName, cfg);
-            const statusLabel = cfg.has_local_key === false ? 'SIN KEY' : 'ACTIVA';
+            const runtimeStatus = deviceRuntimeStatus(activeLightName);
+            const statusLabel = cfg.has_local_key === false ? 'SIN CLAVE' : deviceStateLabel(activeLightName);
             const enc = (base) => encodeURIComponent(commandForDevice(base, activeLightName, cfg));
             const caps = deviceCapabilities(cfg);
             const has = (cap) => caps.includes(cap);
@@ -113,6 +128,14 @@
             const energyPanel = has('energy') ? `
                 <div class="device-status">Consumo disponible cuando el driver reporte energía.</div>
             ` : '';
+            const relinkId = `relink-${encodeURIComponent(activeLightName)}`;
+            const relinkPanel = runtimeStatus?.needs_relink ? `
+                <div class="device-status">La clave local cambió al volver a vincular esta lámpara en Tuya.</div>
+                <div class="device-form">
+                    <input id="${relinkId}" type="password" placeholder="Nueva local key Tuya">
+                    <button class="btn btn-primary" onclick="updateRegisteredDeviceKey('${encodeURIComponent(activeLightName)}')">Actualizar clave</button>
+                </div>
+            ` : '';
 
             panel.innerHTML = `
                 <div class="light-panel-top">
@@ -126,6 +149,7 @@
                 ${sceneControls}
                 ${colorControls}
                 ${energyPanel}
+                ${relinkPanel}
             `;
         }
 
@@ -146,7 +170,7 @@
                             <div class="device-name">${escapeHtml(cfg.label || name)}</div>
                             <div class="device-meta">${escapeHtml(cfg.room || 'sin sala')} · ${escapeHtml(cfg.ip || 'sin IP')} · ${escapeHtml(cfg.device_id || 'sin id')}</div>
                         </div>
-                        <div class="device-badge">${cfg.enabled === false ? 'OFF' : 'ACTIVO'}</div>
+                        <div class="device-badge">${cfg.enabled === false ? 'DESHABILITADO' : escapeHtml(deviceStateLabel(name))}</div>
                     </div>
                 </div>
             `).join('');
@@ -197,10 +221,56 @@
                 renderActiveLights(devicesData.devices || {});
                 renderDeviceCandidates(candidatesData.candidates || []);
                 const pending = (candidatesData.candidates || []).length;
-                setDeviceStatus(pending ? `${pending} dispositivo(s) pendiente(s) de aprobación.` : 'Sin candidatos pendientes.');
+                setDeviceStatus(pending ? `${pending} dispositivo(s) pendiente(s) de aprobación.` : 'Registro sincronizado. Consultando estado real...');
+                await refreshDeviceStatuses();
             } catch (e) {
                 console.error('Error cargando dispositivos:', e);
                 setDeviceStatus(`Dispositivos no disponibles: ${e.message}`);
+            }
+        }
+
+        async function refreshDeviceStatuses() {
+            if (!isAuthenticated || deviceStatusRequestRunning) return;
+            deviceStatusRequestRunning = true;
+            try {
+                const data = await apiFetch('/devices/status');
+                activeDeviceStatuses = data.statuses || {};
+                renderDevices(activeLightDevices);
+                renderActiveLights(activeLightDevices);
+                const statuses = Object.values(activeDeviceStatuses);
+                const online = statuses.filter(item => item.available).length;
+                const relink = statuses.filter(item => item.needs_relink).length;
+                const suffix = relink ? ` ${relink} requiere(n) actualizar la clave Tuya.` : '';
+                setDeviceStatus(`En línea: ${online}/${statuses.length}.${suffix}`);
+            } catch (e) {
+                console.error('Error consultando estados:', e);
+                setDeviceStatus(`Estado real no disponible: ${e.message}`);
+            } finally {
+                deviceStatusRequestRunning = false;
+            }
+        }
+
+        async function updateRegisteredDeviceKey(encodedName) {
+            const name = decodeURIComponent(encodedName);
+            const input = document.getElementById(`relink-${encodeURIComponent(name)}`);
+            const localKey = input?.value || '';
+            if (!localKey.trim()) {
+                setDeviceStatus('Ingresa la nueva local key de Tuya.');
+                return;
+            }
+
+            setDeviceStatus('Actualizando clave local...');
+            try {
+                await apiFetch(`/devices/${encodeURIComponent(name)}/local-key`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ local_key: localKey })
+                });
+                if (input) input.value = '';
+                setDeviceStatus('Clave actualizada. Verificando conexión...');
+                await refreshDeviceStatuses();
+            } catch (e) {
+                console.error('Error actualizando local key:', e);
+                setDeviceStatus(`No se pudo actualizar la clave: ${e.message}`);
             }
         }
 

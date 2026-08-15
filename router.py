@@ -300,6 +300,10 @@ def is_system_status_request(text: str) -> bool:
     return has_any_phrase(text, SYSTEM_STATUS_PATTERNS)
 
 
+def is_explicit_ai_assistant_request(text: str) -> bool:
+    return re.match(r"^(?:nova|codex)\b", text) is not None
+
+
 def has_music_local_hint(text: str) -> bool:
     return has_any_phrase(text, MUSIC_LOCAL_HINTS.keys())
 
@@ -312,6 +316,16 @@ def is_clear_music_request(text: str) -> bool:
     if is_scene_management_command(text):
         return False
     return has_any_phrase(text, MUSIC_WORDS.keys())
+
+
+def is_relax_light_request(text: str) -> bool:
+    return has_any_phrase(
+        text,
+        ["luz", "luces", "lampara", "bombilla", "foco"],
+    ) and has_any_phrase(
+        text,
+        ["relax", "relajado", "relajante", "descanso"],
+    )
 
 
 def context_is_fresh() -> bool:
@@ -427,6 +441,11 @@ def route_query(text: str, available_plugins: List[str]) -> str:
     raw_text = text
     text = normalize_text(text)
 
+    # El nombre inicial selecciona el asistente. Jinnex resolverá después la
+    # acción exacta sin usar un modelo para clasificar la intención.
+    if is_explicit_ai_assistant_request(text) and "local_ia" in available_plugins:
+        return "local_ia"
+
     if is_system_status_request(text):
         return "core_health"
 
@@ -451,6 +470,11 @@ def route_query(text: str, available_plugins: List[str]) -> str:
         music_plugin = prefer_music_plugin(available_plugins)
         if music_plugin:
             return music_plugin
+
+    # "Relax" tambien es un preset musical. Una referencia explicita a una
+    # luz convierte la frase en una solicitud de escena domotica.
+    if is_relax_light_request(text) and "domotica" in available_plugins:
+        return "domotica"
 
     # Reproduccion simple: prioriza el nodo de musica remoto. Solo cae en
     # music_local si el usuario pide explicitamente el celular/local o si el
@@ -540,10 +564,6 @@ def route_query(text: str, available_plugins: List[str]) -> str:
             return last_plugin
         if "domotica" in available_plugins:
             return "domotica"
-
-    # Si dice "luz relax", debería ir a domótica
-    if "luz" in text and "relax" in text and "domotica" in available_plugins:
-        return "domotica"
 
     # -------------------------
     # 5) ELEGIR GANADOR

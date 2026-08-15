@@ -1,6 +1,7 @@
 import requests
 import json
 import os
+from assistant_identity import build_assistant_prompt
 
 VERSION = "v3.0.0"
 DESCRIPTION = "Delega tareas pesadas al orquestador de laptop"
@@ -8,8 +9,18 @@ TRIGGERS = ["analiza", "evalúa", "investiga", "optimiza", "estrategia",
             "plan", "proyecto", "sistema", "compara", "recomienda"]
 
 ORCHESTRATOR_URL = os.getenv("JARVIS_ORCHESTRATOR_URL", "http://jarvis-node.local:5006")
-OLLAMA_URL = os.getenv("JARVIS_OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("JARVIS_OLLAMA_MODEL", "qwen2.5:0.5b")
+OPENROUTER_API_URL = os.getenv(
+    "OPENROUTER_API_URL",
+    "https://openrouter.ai/api/v1",
+).rstrip("/")
+OPENROUTER_CHAT_URL = f"{OPENROUTER_API_URL}/chat/completions"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_MODEL = os.getenv(
+    "OPENROUTER_MODEL",
+    "deepseek/deepseek-v4-flash",
+).strip()
+OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "").strip()
+OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "PEARL HOME").strip()
 
 def can_handle(pregunta):
     return any(t in pregunta.lower() for t in TRIGGERS)
@@ -122,9 +133,12 @@ def handle_stream(pregunta):
             buffered_json = False
             streaming_started = False
 
-            for payload in response.iter_lines(decode_unicode=True):
+            for payload in response.iter_lines(decode_unicode=False):
                 if not payload:
                     continue
+
+                if isinstance(payload, bytes):
+                    payload = payload.decode("utf-8", errors="replace")
 
                 try:
                     event = json.loads(payload)
@@ -196,13 +210,13 @@ def handle_stream(pregunta):
 
 def fallback_local(pregunta, razon=""):
     """
-    Fallback: usa primero el plugin local_ia; si no existe, intenta Ollama directo.
+    Fallback: usa primero el plugin local_ia; si no existe, intenta OpenRouter directo.
     """
     plugin_result = fallback_local_plugin(pregunta, razon)
     if plugin_result is not None:
         return plugin_result
 
-    return fallback_ollama(pregunta, razon)
+    return fallback_openrouter(pregunta, razon)
 
 
 def fallback_local_plugin(pregunta, razon=""):
@@ -238,37 +252,111 @@ def fallback_local_stream(pregunta, razon=""):
     except Exception:
         pass
 
-    yield from fallback_ollama_stream(pregunta, razon)
+    yield from fallback_openrouter_stream(pregunta, razon)
 
-def fallback_ollama(pregunta, razon=""):
+def _openrouter_headers():
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    if OPENROUTER_SITE_URL:
+        headers["HTTP-Referer"] = OPENROUTER_SITE_URL
+    if OPENROUTER_APP_NAME:
+        headers["X-Title"] = OPENROUTER_APP_NAME
+    return headers
+
+
+def _openrouter_payload(pregunta, stream=False):
+    return {
+        "model": OPENROUTER_MODEL,
+        "messages": [{
+            "role": "user",
+            "content": build_assistant_prompt(pregunta),
+        }],
+        "stream": stream,
+    }
+
+
+def _openrouter_error(response):
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        payload = {}
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(error, dict):
+        message = error.get("message") or error.get("code")
+    else:
+        message = error
+    message = str(message).strip() if message else ""
+    suffix = f": {message[:240]}" if message else ""
+    return f"OpenRouter HTTP {response.status_code}{suffix}"
+
+
+def _openrouter_content(payload):
+    choices = payload.get("choices", []) if isinstance(payload, dict) else []
+    if not choices or not isinstance(choices[0], dict):
+        return ""
+    message = choices[0].get("message") or {}
+    content = message.get("content", "") if isinstance(message, dict) else ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            str(item.get("text", ""))
+            for item in content
+            if isinstance(item, dict)
+        )
+    return str(content or "")
+
+
+def _openrouter_stream_token(payload):
+    choices = payload.get("choices", []) if isinstance(payload, dict) else []
+    if not choices or not isinstance(choices[0], dict):
+        return ""
+    delta = choices[0].get("delta") or {}
+    content = delta.get("content", "") if isinstance(delta, dict) else ""
+    return content if isinstance(content, str) else str(content or "")
+
+
+def fallback_openrouter(pregunta, razon=""):
+    if not OPENROUTER_API_KEY:
+        return {
+            "respuesta": "OpenRouter no está configurado.",
+            "cerebro": "local_ia (fallback)",
+            "status": "failed",
+            "fallback_reason": razon,
+        }
+
     try:
         response = requests.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={"model": OLLAMA_MODEL, "prompt": pregunta, "stream": False},
-            timeout=240
+            OPENROUTER_CHAT_URL,
+            headers=_openrouter_headers(),
+            json=_openrouter_payload(pregunta),
+            timeout=(5, 120),
         )
         if response.status_code == 200:
             return {
-                "respuesta": conversational_response(response.json().get("response", "Error")),
+                "respuesta": conversational_response(_openrouter_content(response.json()) or "Error"),
                 "cerebro": "local_ia (fallback)",
                 "status": "local_fallback",
                 "fallback_reason": razon
             }
 
         return {
-            "respuesta": f"Fallback local respondió HTTP {response.status_code}. {razon}",
+            "respuesta": f"Fallback OpenRouter respondió HTTP {response.status_code}. {razon}",
             "cerebro": "local_ia (fallback)",
             "status": "failed",
             "fallback_reason": razon
         }
     except Exception as e:
         return {
-            "respuesta": f"No disponible. {razon}. Error: {str(e)}",
+        "respuesta": f"OpenRouter no disponible. {razon}.",
             "cerebro": "error",
             "status": "failed"
         }
 
-def fallback_ollama_stream(pregunta, razon=""):
+def fallback_openrouter_stream(pregunta, razon=""):
     yield ndjson_event({
         "event": "meta",
         "status": "streaming",
@@ -277,32 +365,70 @@ def fallback_ollama_stream(pregunta, razon=""):
         "fallback_reason": razon
     })
 
+    if not OPENROUTER_API_KEY:
+        yield ndjson_event({
+            "event": "error",
+            "status": "error",
+            "plugin": "critical",
+            "error": "OpenRouter no está configurado.",
+        })
+        return
+
     try:
         with requests.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={"model": OLLAMA_MODEL, "prompt": pregunta, "stream": True},
-            timeout=(5, 240),
-            stream=True
+            OPENROUTER_CHAT_URL,
+            headers=_openrouter_headers(),
+            json=_openrouter_payload(pregunta, stream=True),
+            timeout=(5, 120),
+            stream=True,
         ) as response:
             if response.status_code != 200:
                 yield ndjson_event({
                     "event": "error",
                     "status": "error",
                     "plugin": "critical",
-                    "error": f"Fallback local HTTP {response.status_code}. {razon}"
+                    "error": f"{_openrouter_error(response)}. {razon}",
                 })
                 return
 
             full_response = []
-            for payload in response.iter_lines(decode_unicode=True):
-                if not payload:
+            response_model = OPENROUTER_MODEL
+            for raw_line in response.iter_lines(decode_unicode=False):
+                if isinstance(raw_line, bytes):
+                    raw_line = raw_line.decode("utf-8", errors="replace")
+                line = (raw_line or "").strip()
+                if not line or line.startswith(":"):
                     continue
+                if line.startswith("data:"):
+                    line = line[5:].strip()
+                if line == "[DONE]":
+                    yield ndjson_event({
+                        "event": "done",
+                        "status": "success",
+                        "plugin": "critical",
+                        "brain": "local_ia (fallback)",
+                        "model": response_model,
+                        "response": conversational_response("".join(full_response)),
+                        "fallback_reason": razon,
+                    })
+                    return
                 try:
-                    chunk = json.loads(payload)
+                    chunk = json.loads(line)
                 except json.JSONDecodeError:
                     continue
 
-                token = chunk.get("response", "")
+                if chunk.get("model"):
+                    response_model = chunk["model"]
+                if chunk.get("error"):
+                    yield ndjson_event({
+                        "event": "error",
+                        "status": "error",
+                        "plugin": "critical",
+                        "error": "Error durante el stream de OpenRouter.",
+                    })
+                    return
+
+                token = _openrouter_stream_token(chunk)
                 if token:
                     full_response.append(token)
                     yield ndjson_event({
@@ -318,14 +444,24 @@ def fallback_ollama_stream(pregunta, razon=""):
                         "status": "success",
                         "plugin": "critical",
                         "brain": "local_ia (fallback)",
+                        "model": response_model,
                         "response": conversational_response("".join(full_response)),
                         "fallback_reason": razon
                     })
                     return
+            yield ndjson_event({
+                "event": "done",
+                "status": "success",
+                "plugin": "critical",
+                "brain": "local_ia (fallback)",
+                "model": response_model,
+                "response": conversational_response("".join(full_response)),
+                "fallback_reason": razon,
+            })
     except Exception as e:
         yield ndjson_event({
             "event": "error",
             "status": "error",
             "plugin": "critical",
-            "error": f"{razon}. Error: {str(e)}"
+            "error": f"{razon}. Error de OpenRouter: {str(e)[:200]}"
         })

@@ -133,3 +133,20 @@ def upsert_device(device_name: str, device_config: dict):
     devices[device_name] = normalize_device_config(device_name, device_config)
     save_devices(devices)
     return devices[device_name]
+
+def update_device_local_key(device_name: str, local_key: str):
+    local_key = str(local_key or "").strip()
+    if not local_key:
+        raise ValueError("local_key_required")
+
+    devices = load_devices()
+    current = devices.get(device_name)
+    if not current:
+        raise ValueError("device_not_found")
+
+    updated = dict(current)
+    updated["local_key"] = local_key
+    updated["enabled"] = True
+    devices[device_name] = normalize_device_config(device_name, updated)
+    save_devices(devices)
+    return devices[device_name]

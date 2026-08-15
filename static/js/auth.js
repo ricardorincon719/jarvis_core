@@ -22,6 +22,7 @@
                 setInterval(loadNetworkInfo, 10000);
                 setInterval(loadMusicStatus, 5000);
                 setInterval(loadAiStatus, 10000);
+                setInterval(refreshDeviceStatuses, 15000);
             }
 
             if (playWelcome) playAudio('audioWelcome');

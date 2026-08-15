@@ -152,6 +152,40 @@ class TuyaPlugDriver:
             _, ip, status = self._get_working(force_discovery=False)
             return {"ok": True, "ip": ip, "status": status}
 
+    def probe_status(self, rid=None):
+        """Consulta rápida para UI sin lanzar un escaneo LAN costoso."""
+        with self.device_lock:
+            candidates = [self.default_ip, self._cached_ip()]
+            last_error = "device_unreachable"
+            last_code = None
+            last_ip = None
+            for ip in dict.fromkeys(value for value in candidates if value):
+                last_ip = ip
+                try:
+                    status = self._build_device(ip).status()
+                except Exception as exc:
+                    last_error = str(exc)
+                    continue
+                if self._is_valid_status(status):
+                    self._save_cache({"ip": ip, "updated_at": int(time.time()), "mac": self.mac})
+                    return {"ok": True, "ip": ip, "status": status}
+                if isinstance(status, dict):
+                    last_code = status.get("Err")
+                    last_error = status.get("Error") or f"tuya_err_{last_code}"
+                    if str(last_code) == "904":
+                        return {
+                            "ok": False,
+                            "ip": ip,
+                            "error": last_error,
+                            "error_code": last_code,
+                        }
+            return {
+                "ok": False,
+                "ip": last_ip,
+                "error": last_error,
+                "error_code": last_code,
+            }
+
     def turn_on(self, rid=None):
         with self.device_lock:
             return self._execute_switch(True)

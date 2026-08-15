@@ -167,6 +167,67 @@ class SharedSceneMemoryMultiLightTest(unittest.TestCase):
                     [("lamp_quarto", "lectura"), ("lamp_sala", "relax")],
                 )
 
+    def test_unknown_genre_falls_back_to_query_across_two_days(self):
+        events = [
+            {
+                "id": "event-1",
+                "timestamp": "2026-06-10T17:21:38",
+                "music": {
+                    "plugin": "music",
+                    "target": "laptop",
+                    "query": "pinguinos al ritmo de la oscuridad",
+                    "genre": "unknown",
+                },
+                "lights": {
+                    "plugin": "domotica",
+                    "device": "lamp_sala",
+                    "scene_name": "lectura",
+                    "scene": {"mode": "white", "brightness": 1000},
+                },
+            },
+            {
+                "id": "event-2",
+                "timestamp": "2026-06-12T17:22:24",
+                "music": {
+                    "plugin": "music",
+                    "target": "laptop",
+                    "query": "pinguinos al ritmo de la oscuridad",
+                    "genre": "unknown",
+                },
+                "lights": {
+                    "plugin": "domotica",
+                    "device": "lamp_sala",
+                    "scene_name": "lectura",
+                    "scene": {"mode": "white", "brightness": 1000},
+                },
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            memory_dir = Path(temp_dir)
+            events_file = memory_dir / "compound_events.json"
+            scenes_file = memory_dir / "learned_scenes.json"
+            with patch.object(scene_memory, "MEMORY_DIR", memory_dir), patch.object(
+                scene_memory, "EVENTS_FILE", events_file
+            ), patch.object(scene_memory, "SCENES_FILE", scenes_file), patch.object(
+                scene_memory, "DEFAULT_MIN_REPETITIONS", 2
+            ), patch.object(scene_memory, "DEFAULT_MIN_UNIQUE_DAYS", 2):
+                store = scene_memory.SharedSceneMemory()
+                scene_memory._write_json(events_file, events)
+                candidates = store.detect_candidates()
+
+        self.assertTrue(candidates)
+        self.assertEqual(len(candidates), 1)
+        self.assertNotEqual(candidates[0]["signature"][0], "family")
+        self.assertTrue(
+            any(
+                candidate["signature"][1] == "pinguinos al ritmo de la oscuridad"
+                and candidate["evidence_count"] == 2
+                and candidate["unique_days"] == 2
+                for candidate in candidates
+            )
+        )
+
 
 class SharedSceneExecutionTest(unittest.TestCase):
     def test_shared_scene_executes_both_light_actions(self):

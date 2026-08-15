@@ -17,7 +17,7 @@ MEMORY_DIR = Path(os.getenv("JARVIS_SCENE_MEMORY_DIR", str(BASE_DIR / "scene_mem
 EVENTS_FILE = MEMORY_DIR / "compound_events.json"
 SCENES_FILE = MEMORY_DIR / "learned_scenes.json"
 
-DEFAULT_MIN_REPETITIONS = int(os.getenv("JARVIS_SCENE_MEMORY_MIN_REPETITIONS", "4"))
+DEFAULT_MIN_REPETITIONS = int(os.getenv("JARVIS_SCENE_MEMORY_MIN_REPETITIONS", "2"))
 DEFAULT_MIN_UNIQUE_DAYS = int(os.getenv("JARVIS_SCENE_MEMORY_MIN_UNIQUE_DAYS", "2"))
 MIN_EVENT_DATE = os.getenv("JARVIS_SCENE_MEMORY_MIN_DATE", "").strip()
 
@@ -129,6 +129,13 @@ def _brightness_bucket(value) -> str:
     return "high"
 
 
+def _music_pattern_key(music: Dict) -> str:
+    genre = _normalize_text(music.get("genre"))
+    if genre != "unknown":
+        return genre
+    return _normalize_text(music.get("query"))
+
+
 def _event_lights(event: Dict) -> List[Dict]:
     light_actions = event.get("light_actions")
     if isinstance(light_actions, list):
@@ -161,7 +168,7 @@ def _scene_signature(event: Dict) -> Tuple[str, ...]:
     music = event.get("music") or {}
     lights = _event_lights(event)
     dt = _parse_time(event.get("timestamp"))
-    genre_or_query = music.get("genre") or music.get("query")
+    music_key = _music_pattern_key(music)
 
     # Preserve signatures already stored by single-light installations.
     if "light_actions" not in event and len(lights) == 1:
@@ -169,7 +176,7 @@ def _scene_signature(event: Dict) -> Tuple[str, ...]:
         scene = light.get("scene") or {}
         return (
             _normalize_text(music.get("target")),
-            _normalize_text(genre_or_query),
+            music_key,
             _normalize_text(light.get("device")),
             _normalize_text(light.get("scene_name")),
             _normalize_text(scene.get("mode")),
@@ -180,7 +187,7 @@ def _scene_signature(event: Dict) -> Tuple[str, ...]:
     light_signatures = sorted(_light_signature(light) for light in lights)
     return (
         _normalize_text(music.get("target")),
-        _normalize_text(genre_or_query),
+        music_key,
         *light_signatures,
         _time_window(dt),
     )
@@ -189,13 +196,13 @@ def _scene_signature(event: Dict) -> Tuple[str, ...]:
 def _scene_family_signature(event: Dict) -> Tuple[str, ...]:
     music = event.get("music") or {}
     lights = _event_lights(event)
-    genre_or_query = music.get("genre") or music.get("query")
+    music_key = _music_pattern_key(music)
 
     if "light_actions" not in event and len(lights) == 1:
         light = lights[0]
         scene = light.get("scene") or {}
         return (
-            _normalize_text(genre_or_query),
+            music_key,
             _normalize_text(light.get("scene_name")),
             _normalize_text(scene.get("mode")),
             _brightness_bucket(scene.get("brightness")),
@@ -206,7 +213,7 @@ def _scene_family_signature(event: Dict) -> Tuple[str, ...]:
         for light in lights
     )
     return (
-        _normalize_text(genre_or_query),
+        music_key,
         *light_signatures,
     )
 
@@ -223,7 +230,7 @@ def _build_scene_from_group(signature: Tuple[str, ...], events: List[Dict]) -> D
     latest_lights = _event_lights(latest)
     scene_id = "scene_" + uuid.uuid4().hex[:12]
     music_target = _normalize_text(latest_music.get("target"))
-    music_key = _normalize_text(latest_music.get("genre") or latest_music.get("query"))
+    music_key = _music_pattern_key(latest_music)
     time_window = _time_window(_parse_time(latest.get("timestamp")))
 
     light_actions = []
@@ -385,6 +392,11 @@ class SharedSceneMemory:
             events = _read_json(EVENTS_FILE, [])
         return events[-limit:]
 
+    def detect_candidates(self) -> List[Dict]:
+        with _lock:
+            events = _read_json(EVENTS_FILE, [])
+            return self._detect_candidates_locked(events)
+
     def list_scenes(self, status: Optional[str] = None) -> List[Dict]:
         with _lock:
             scenes = _read_json(SCENES_FILE, [])
@@ -517,6 +529,20 @@ class SharedSceneMemory:
             if not any("unknown" in str(part) for part in family_signature[1:]):
                 grouped[family_signature].append(event)
 
+        qualifying_exact_groups = set()
+        for signature, group in grouped.items():
+            if signature[0] == "family":
+                continue
+            unique_days = {
+                _parse_time(item.get("timestamp")).date().isoformat()
+                for item in group
+            }
+            if (
+                len(group) >= DEFAULT_MIN_REPETITIONS
+                and len(unique_days) >= DEFAULT_MIN_UNIQUE_DAYS
+            ):
+                qualifying_exact_groups.add(tuple(sorted(id(item) for item in group)))
+
         created = []
         for signature, group in grouped.items():
             unique_days = {
@@ -526,6 +552,11 @@ class SharedSceneMemory:
             if len(group) < DEFAULT_MIN_REPETITIONS:
                 continue
             if len(unique_days) < DEFAULT_MIN_UNIQUE_DAYS:
+                continue
+            if (
+                signature[0] == "family"
+                and tuple(sorted(id(item) for item in group)) in qualifying_exact_groups
+            ):
                 continue
             if signature in existing:
                 continue

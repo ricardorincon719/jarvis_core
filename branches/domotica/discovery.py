@@ -108,12 +108,18 @@ def _refresh_known_device(candidate: Dict, devices: Dict) -> bool:
 
     current = dict(devices.get(name) or {})
     updated = dict(current)
-    updated["ip"] = _best_ip(current.get("ip"), candidate.get("ip"))
+    incoming_ip = str(candidate.get("ip") or "").strip()
+    if _is_local_ip(incoming_ip):
+        updated["ip"] = incoming_ip
+    else:
+        updated["ip"] = _best_ip(current.get("ip"), incoming_ip)
 
     for key in ("mac", "version", "product_key", "provider", "driver"):
         if candidate.get(key) not in ("", None):
             updated[key] = candidate[key]
-    if candidate.get("local_key") and not updated.get("local_key"):
+    # Re-emparejar un dispositivo en Tuya puede rotar la local_key. Una clave
+    # obtenida de Tuya Cloud debe reemplazar la almacenada, no solo rellenarla.
+    if candidate.get("local_key"):
         updated["local_key"] = candidate["local_key"]
     if not updated.get("name"):
         updated["name"] = name

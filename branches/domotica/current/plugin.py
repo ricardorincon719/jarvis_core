@@ -36,6 +36,20 @@ def handle(pregunta):
     return _agent.handle(pregunta)
 
 
+def build_plan(pregunta):
+    return _agent.build_plan(pregunta)
+
+
+def execute_confirmed_plan(plan, pregunta):
+    normalized = normalize_text(pregunta)
+    response = _agent.execute_plan(plan, pregunta, normalized)
+    try:
+        _agent.memory.record_interaction(pregunta, normalized, plan, response)
+    except Exception as exc:
+        response.setdefault("debug", {})["memory_error"] = str(exc)
+    return response
+
+
 def get_current_scene_snapshot():
     return _agent._get_current_scene_snapshot(DEVICE_NAME)
 
@@ -59,6 +73,14 @@ def apply_scene_to_device(device: str, scene: dict):
 
 def list_devices():
     return _agent.service.devices()
+
+
+def list_device_statuses():
+    return _agent.service.statuses()
+
+
+def update_device_local_key(device_name: str, local_key: str):
+    return _agent.service.update_local_key(device_name, local_key)
 
 
 def discover_devices(timeout=None):

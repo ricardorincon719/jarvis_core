@@ -19,24 +19,50 @@ def can_handle(prompt):
     return any(keyword in prompt_lower for keyword in TRIGGERS)
 
 
-def handle(prompt):
+def build_plan(prompt):
     prompt_lower = prompt.lower()
-
     if "linterna" in prompt_lower:
-        if any(x in prompt_lower for x in ["encender", "prender", "activar", "on"]):
-            subprocess.run(["termux-torch", "on"])
-            return {
-                "respuesta": "Sistemas de iluminación activados, señor.",
-                "cerebro": NAME
-            }
+        if any(x in prompt_lower for x in ["encender", "enciende", "prender", "prende", "activar", "activa", "on"]):
+            action_type = "torch_on"
         else:
-            subprocess.run(["termux-torch", "off"])
-            return {
-                "respuesta": "Sistemas de iluminación desactivados, señor.",
-                "cerebro": NAME
-            }
+            action_type = "torch_off"
+        return {"agent": NAME, "intent": action_type, "actions": [{"type": action_type}]}
 
     if "batería" in prompt_lower or "bateria" in prompt_lower or "energía" in prompt_lower:
+        return {"agent": NAME, "intent": "battery_status", "actions": [{"type": "battery_status"}]}
+
+    if "vibrar" in prompt_lower:
+        return {"agent": NAME, "intent": "vibrate", "actions": [{"type": "vibrate", "duration_ms": 1000}]}
+
+    if "huella" in prompt_lower or "biometría" in prompt_lower or "biometria" in prompt_lower:
+        return {"agent": NAME, "intent": "fingerprint", "actions": [{"type": "fingerprint"}]}
+
+    return {"agent": NAME, "intent": "unknown", "actions": []}
+
+
+def execute_confirmed_plan(plan, prompt):
+    actions = plan.get("actions") or []
+    if len(actions) != 1 or not isinstance(actions[0], dict):
+        return {"respuesta": "Comando no reconocido.", "cerebro": NAME}
+
+    action = actions[0]
+    action_type = action.get("type")
+    if action_type not in {"torch_on", "torch_off", "battery_status", "vibrate", "fingerprint"}:
+        raise ValueError(f"Accion de hardware no permitida: {action_type}")
+
+    if action_type in {"torch_on", "torch_off"}:
+        enabled = action_type == "torch_on"
+        subprocess.run(["termux-torch", "on" if enabled else "off"])
+        return {
+            "respuesta": (
+                "Sistemas de iluminación activados, señor."
+                if enabled else "Sistemas de iluminación desactivados, señor."
+            ),
+            "cerebro": NAME,
+            "ok": True,
+        }
+
+    if action_type == "battery_status":
         porcentaje = 0
         estado_texto = "desconocido"
 
@@ -94,14 +120,16 @@ def handle(prompt):
             "cerebro": NAME
         }
 
-    if "vibrar" in prompt_lower:
-        subprocess.run(["termux-vibrate", "-d", "1000"])
+    if action_type == "vibrate":
+        duration = max(100, min(5000, int(action.get("duration_ms") or 1000)))
+        subprocess.run(["termux-vibrate", "-d", str(duration)])
         return {
             "respuesta": "Alerta táctil activada.",
-            "cerebro": NAME
+            "cerebro": NAME,
+            "ok": True,
         }
 
-    if "huella" in prompt_lower or "biometría" in prompt_lower or "biometria" in prompt_lower:
+    if action_type == "fingerprint":
         try:
             result = subprocess.run(
                 ["termux-fingerprint"],
@@ -124,7 +152,8 @@ def handle(prompt):
                 "cerebro": NAME
             }
 
-    return {
-        "respuesta": "Comando no reconocido.",
-        "cerebro": NAME
-    }
+    raise ValueError(f"Accion de hardware no soportada: {action_type}")
+
+
+def handle(prompt):
+    return execute_confirmed_plan(build_plan(prompt), prompt)

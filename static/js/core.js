@@ -57,6 +57,8 @@
         let isAuthenticated = false;
         let activeLightName = 'lamp_sala';
         let activeLightDevices = {};
+        let activeDeviceStatuses = {};
+        let deviceStatusRequestRunning = false;
 
         /* CURSOR */
         document.addEventListener('mousemove', (e) => {
@@ -124,8 +126,17 @@
         updateClock();
         setBootTime();
 
+        function bridgeHeaders() {
+            const host = window.location.hostname || '';
+            const isNgrok = host.endsWith('.ngrok-free.dev') ||
+                host.endsWith('.ngrok.app') ||
+                host.endsWith('.ngrok.io');
+            return isNgrok ? { 'ngrok-skip-browser-warning': 'true' } : {};
+        }
+
         async function apiFetch(url, options = {}) {
             const headers = {
+                ...bridgeHeaders(),
                 ...(TOKEN ? { 'Authorization': TOKEN } : {}),
                 ...(options.body ? { 'Content-Type': 'application/json' } : {}),
                 ...(options.headers || {})
