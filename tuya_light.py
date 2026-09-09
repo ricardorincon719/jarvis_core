@@ -423,21 +423,24 @@ def classify_result(result):
 def format_response(success_msg, fail_msg, result):
     if result["classification"] == "confirmed":
         return {
-            "respuesta": f"{success_msg} (confirmado, IP {result['ip']})",
+            "respuesta": f"{success_msg} (confirmado)",
             "cerebro": "SteckLight",
             "debug": result
         }
 
     if result["classification"] == "sent_but_unconfirmed":
         return {
-            "respuesta": f"{fail_msg}: comando enviado pero no confirmó exactamente el estado esperado (IP {result['ip']})",
+            "respuesta": (
+                f"{fail_msg}: comando enviado pero no confirmó exactamente "
+                "el estado esperado"
+            ),
             "cerebro": "SteckLight",
             "debug": result
         }
 
     if result["classification"] == "transport_error":
         return {
-            "respuesta": f"Error de transporte/control local (IP {result['ip']}): {result['error']}",
+            "respuesta": f"Error de transporte/control local: {result['error']}",
             "cerebro": "SteckLight",
             "debug": result
         }
@@ -984,7 +987,7 @@ def get_status_response(rid=None):
         state = normalize_state_from_status(st)
 
         return {
-            "respuesta": f"Estado actual leído correctamente (IP {ip})",
+            "respuesta": "Estado actual leído correctamente",
             "cerebro": "SteckLight",
             "debug": {
                 "ok": True,

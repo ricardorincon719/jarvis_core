@@ -79,6 +79,15 @@ class DomoticaCompositePlanTest(unittest.TestCase):
         self.assertEqual([device for device, _ in self.service.applied], ["lamp_quarto", "lamp_sala"])
         self.assertEqual([event[0] for event in self.memory.events], ["lamp_quarto", "lamp_sala"])
 
+    def test_public_response_hides_ip_but_debug_keeps_it(self):
+        plan = {"intent": "turn_on"}
+        results = [{"ok": True, "ip": "192.168.1.44"}]
+
+        response = self.agent._action_response(plan, results, [])
+
+        self.assertEqual(response["respuesta"], "Luz encendida")
+        self.assertEqual(response["debug"]["results"][0]["ip"], "192.168.1.44")
+
 
 class SharedSceneMemoryMultiLightTest(unittest.TestCase):
     def test_legacy_single_light_signature_is_preserved(self):

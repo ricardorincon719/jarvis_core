@@ -648,21 +648,27 @@ def can_handle(pregunta):
 def format_response(success_msg, fail_msg, result):
     if result["classification"] == "confirmed":
         return {
-            "respuesta": f"{success_msg} (confirmado, IP {result['ip']})",
+            "respuesta": f"{success_msg} (confirmado)",
             "cerebro": "SteckLight",
             "debug": result,
         }
 
     if result["classification"] == "sent_but_unconfirmed":
         return {
-            "respuesta": f"{fail_msg}: comando enviado pero estado no confirmó exactamente lo esperado (IP {result['ip']})",
+            "respuesta": (
+                f"{fail_msg}: comando enviado pero estado no confirmó "
+                "exactamente lo esperado"
+            ),
             "cerebro": "SteckLight",
             "debug": result,
         }
 
     if result["classification"] == "transport_error":
         return {
-            "respuesta": f"Error de transporte/control local de la lámpara (IP {result['ip']}): {result['error']}",
+            "respuesta": (
+                "Error de transporte/control local de la lámpara: "
+                f"{result['error']}"
+            ),
             "cerebro": "SteckLight",
             "debug": result,
         }
@@ -899,7 +905,7 @@ def _handle_locked(pregunta):
             return {
                 "respuesta": (
                     f"Estado actual: {estado_txt}, modo={mode}, brillo={bright}, "
-                    f"temperatura={temp}, color={color}, IP {ip}"
+                    f"temperatura={temp}, color={color}"
                 ),
                 "cerebro": "SteckLight",
                 "debug": {"ip": ip, "status": st},

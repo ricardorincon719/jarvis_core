@@ -693,9 +693,7 @@ class DomoticaAgent:
         }
 
     def _action_response(self, plan: Dict, results: List[Dict], memory_updates: List[Dict]) -> Dict:
-        first = results[0] if results else {}
         ok = all(bool(result.get("ok")) for result in results if isinstance(result, dict))
-        ip = first.get("ip") if isinstance(first, dict) else None
         intent = plan.get("intent") or "domotica"
 
         if intent == "apply_composite_lighting_scene":
@@ -717,8 +715,6 @@ class DomoticaAgent:
         else:
             answer = "Accion domotica ejecutada"
 
-        if ip:
-            answer = f"{answer} ({ip})"
         if not ok and results:
             answer = f"{answer}, pero la confirmacion no fue completa"
 
