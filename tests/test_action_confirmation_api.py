@@ -73,6 +73,18 @@ class FakeConversationalPlugin:
         return {"respuesta": f"respuesta a {prompt}", "ok": True}
 
 
+class RecordingNovaEventBus:
+    def __init__(self, error=None):
+        self.error = error
+        self.publications = []
+
+    def publish_compound_response(self, prompt, payload):
+        if self.error is not None:
+            raise self.error
+        self.publications.append((prompt, payload))
+        return "nova-event-1"
+
+
 class ActionConfirmationApiTest(unittest.TestCase):
     def setUp(self):
         core.app.config.update(TESTING=True)
@@ -284,6 +296,7 @@ class ActionConfirmationApiTest(unittest.TestCase):
             **self.plugin_registry("domotica", lights),
         }
         memory = FakeSharedSceneMemory()
+        event_bus = RecordingNovaEventBus()
 
         def route(text, available):
             return "music" if "jazz" in text else "domotica"
@@ -292,6 +305,8 @@ class ActionConfirmationApiTest(unittest.TestCase):
             core, "plugins", plugins
         ), patch.object(core, "route_query", side_effect=route), patch.object(
             core, "shared_scene_memory", memory
+        ), patch.object(
+            core, "get_nova_event_bus", return_value=event_bus
         ):
             proposed = self.client.post(
                 "/ask",
@@ -303,12 +318,58 @@ class ActionConfirmationApiTest(unittest.TestCase):
                 headers=self.headers,
                 json={"decision": "accept", "idempotency_key": "compound-1"},
             )
+            replay = self.client.post(
+                f"/api/v1/actions/{proposed['proposal']['id']}/decision",
+                headers=self.headers,
+                json={"decision": "accept", "idempotency_key": "compound-1"},
+            )
 
         self.assertEqual(accepted.status_code, 200)
         self.assertEqual(proposed["proposal"]["kind"], "compound_plan")
         self.assertEqual(music.executions, 1)
         self.assertEqual(lights.executions, 1)
         self.assertEqual(len(memory.compound_records), 1)
+        self.assertTrue(replay.get_json()["idempotent"])
+        self.assertEqual(len(event_bus.publications), 1)
+        self.assertEqual(event_bus.publications[0][0], "reproduce jazz y enciende la luz")
+        self.assertTrue(event_bus.publications[0][1]["compound"])
+
+    def test_nova_observer_failure_does_not_change_confirmed_execution(self):
+        music = FakePlannedPlugin("music", "play")
+        lights = FakePlannedPlugin("domotica", "turn_on")
+        plugins = {
+            **self.plugin_registry("music", music),
+            **self.plugin_registry("domotica", lights),
+        }
+
+        def route(text, available):
+            del available
+            return "music" if "jazz" in text else "domotica"
+
+        with patch.object(core, "action_proposal_store", self.store), patch.object(
+            core, "plugins", plugins
+        ), patch.object(core, "route_query", side_effect=route), patch.object(
+            core, "shared_scene_memory", FakeSharedSceneMemory()
+        ), patch.object(
+            core,
+            "get_nova_event_bus",
+            return_value=RecordingNovaEventBus(RuntimeError("nova offline")),
+        ):
+            proposed = self.client.post(
+                "/ask",
+                headers=self.headers,
+                json={"pregunta": "reproduce jazz y enciende la luz"},
+            ).get_json()
+            accepted = self.client.post(
+                f"/api/v1/actions/{proposed['proposal']['id']}/decision",
+                headers=self.headers,
+                json={"decision": "accept", "idempotency_key": "compound-offline"},
+            )
+
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(accepted.get_json()["status"], "executed")
+        self.assertEqual(music.executions, 1)
+        self.assertEqual(lights.executions, 1)
 
     def test_approved_shared_scene_is_proposed_before_physical_execution(self):
         lights = FakePlannedPlugin("domotica", "apply_scene")

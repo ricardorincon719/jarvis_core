@@ -174,6 +174,77 @@ class LocalIaNovaBridgeTests(unittest.TestCase):
         self.assertEqual(result["status"], "connected")
         self.assertEqual(get.call_args.args[0], f"{core.NOVA_URL}/health")
 
+    def test_core_fetches_real_nova_complex_event_candidates(self):
+        candidates = [{
+            "complex_event_id": "complex-1",
+            "status": "candidate",
+            "summary": "Música y luz de lectura",
+            "requires_confirmation": True,
+            "auto_execute": False,
+        }]
+        response = FakeResponse(payload={"status": "ok", "candidates": candidates})
+
+        with patch.object(core, "NOVA_ENABLED", True), patch.object(
+            core.requests,
+            "get",
+            return_value=response,
+        ) as get:
+            result = core.fetch_nova_complex_event_candidates(limit=25)
+
+        self.assertEqual(result, candidates)
+        self.assertEqual(
+            get.call_args.args[0],
+            f"{core.NOVA_URL}/v1/complex-events/candidates",
+        )
+        self.assertEqual(get.call_args.kwargs["params"], {"limit": 25})
+
+    def test_candidate_phrase_is_answered_from_nova_not_conversation(self):
+        candidate = {
+            "complex_event_id": "complex-1",
+            "status": "candidate",
+            "summary": "Música jazz y luz blanca",
+            "occurred_at": "2026-08-14T21:09:32+00:00",
+        }
+        client = core.app.test_client()
+        headers = {"Authorization": f"Bearer {core.SECRET_TOKEN}"}
+
+        with patch.object(
+            core,
+            "fetch_nova_complex_event_candidates",
+            return_value=[candidate],
+        ), patch.object(core, "route_query") as router:
+            response = client.post(
+                "/ask_stream",
+                headers=headers,
+                json={"pregunta": "Escenas candidatas"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["candidate_source"], "nova_complex_events")
+        self.assertEqual(response.get_json()["nova_candidates"], [candidate])
+        self.assertIn("Candidatos de eventos compuestos en Nova", response.get_json()["respuesta"])
+        router.assert_not_called()
+
+    def test_authenticated_core_endpoint_keeps_nova_candidates_separate(self):
+        candidate = {"complex_event_id": "complex-1", "status": "candidate"}
+        client = core.app.test_client()
+        headers = {"Authorization": f"Bearer {core.SECRET_TOKEN}"}
+
+        with patch.object(
+            core,
+            "fetch_nova_complex_event_candidates",
+            return_value=[candidate],
+        ):
+            response = client.get(
+                "/api/v1/nova/complex-event-candidates?limit=10",
+                headers=headers,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["source"], "nova")
+        self.assertEqual(response.get_json()["candidate_type"], "complex_event")
+        self.assertEqual(response.get_json()["candidates"], [candidate])
+
 
 class NovaEventBusTests(unittest.TestCase):
     def test_compound_event_is_durable_and_delivered_without_changing_pearl(self):

@@ -193,23 +193,31 @@ def get_nova_event_bus():
     return _nova_event_bus
 
 
+def publish_compound_result_to_nova(prompt: str, payload: dict) -> str | None:
+    """Persistir una observación compuesta sin dar autoridad a Nova."""
+    try:
+        event_bus = get_nova_event_bus()
+        if event_bus is None:
+            return None
+        return event_bus.publish_compound_response(prompt, payload)
+    except Exception:
+        # Nova es observador: nunca puede afectar el resultado de PEARL.
+        return None
+
+
 @app.after_request
 def publish_compound_event_to_nova(response):
     """Observar respuestas compuestas sin alterar su resultado ni ejecución."""
     if request.method != "POST" or request.path not in {"/ask", "/ask_stream"}:
         return response
-    try:
-        payload = response.get_json(silent=True)
-        if not isinstance(payload, dict) or not payload.get("compound"):
-            return response
-        request_payload = request.get_json(silent=True) or {}
-        prompt = request_payload.get("pregunta", "")
-        event_bus = get_nova_event_bus()
-        if event_bus is not None:
-            event_bus.publish_compound_response(prompt, payload)
-    except Exception:
-        # Nova es observador: nunca puede afectar el resultado de PEARL.
+    payload = response.get_json(silent=True)
+    if not isinstance(payload, dict) or not payload.get("compound"):
         return response
+    request_payload = request.get_json(silent=True) or {}
+    publish_compound_result_to_nova(
+        request_payload.get("pregunta", ""),
+        payload,
+    )
     return response
 
 
@@ -931,6 +939,9 @@ def apply_action_decision(proposal_id: str, decision: str, idempotency_key: str,
         success = False
 
     completed = action_proposal_store.complete(proposal_id, result, success)
+    if success and result.get("compound"):
+        envelope = proposal.get("plan") or {}
+        publish_compound_result_to_nova(envelope.get("prompt") or "", result)
     public = action_proposal_store.public(completed)
     return {
         "status": public.get("status"),
@@ -1325,6 +1336,80 @@ def is_shared_scene_list_query(text: str) -> bool:
     )
 
 
+def is_nova_candidate_list_query(text: str) -> bool:
+    normalized = normalize_text(text)
+    return any(
+        phrase in normalized
+        for phrase in (
+            "escenas candidatas",
+            "candidatas de nova",
+            "candidatas en nova",
+            "candidatos de nova",
+            "candidatos en nova",
+            "eventos candidatos de nova",
+        )
+    )
+
+
+def fetch_nova_complex_event_candidates(limit: int = 50) -> list[dict]:
+    if not NOVA_ENABLED:
+        raise RuntimeError("nova_disabled")
+    bounded_limit = max(1, min(int(limit), 500))
+    response = requests.get(
+        f"{NOVA_URL}/v1/complex-events/candidates",
+        params={"limit": bounded_limit},
+        timeout=(1.0, NOVA_EVENT_TIMEOUT),
+    )
+    if response.status_code != 200:
+        raise RuntimeError(f"nova_http_{response.status_code}")
+    payload = response.json()
+    candidates = payload.get("candidates") if isinstance(payload, dict) else None
+    if not isinstance(candidates, list) or not all(
+        isinstance(candidate, dict) for candidate in candidates
+    ):
+        raise RuntimeError("nova_candidates_invalid_response")
+    return candidates
+
+
+def handle_nova_candidate_query(prompt: str):
+    if not is_nova_candidate_list_query(prompt):
+        return None
+    try:
+        candidates = fetch_nova_complex_event_candidates()
+    except Exception:
+        return {
+            "respuesta": "No pude consultar ahora los candidatos de eventos compuestos en Nova.",
+            "cerebro": "Core",
+            "plugin": "nova",
+            "ok": False,
+            "status": "unavailable",
+            "candidate_source": "nova_complex_events",
+            "nova_candidates": [],
+        }
+
+    if not candidates:
+        answer = "Nova no tiene candidatos de eventos compuestos."
+    else:
+        labels = []
+        for candidate in candidates[:5]:
+            summary = candidate.get("summary") or candidate.get("kind") or "evento compuesto"
+            occurred_at = candidate.get("occurred_at")
+            label = str(summary)
+            if occurred_at:
+                label += f" [{occurred_at}]"
+            labels.append(label)
+        answer = "Candidatos de eventos compuestos en Nova: " + " | ".join(labels)
+    return {
+        "respuesta": answer,
+        "cerebro": "Core",
+        "plugin": "nova",
+        "ok": True,
+        "candidate_source": "nova_complex_events",
+        "nova_candidates": candidates,
+        "count": len(candidates),
+    }
+
+
 def wants_music_local_fallback(text: str) -> bool:
     normalized = normalize_text(text)
     return any(
@@ -1615,6 +1700,11 @@ def ask():
     if is_system_status_request(normalize_text(pregunta)):
         return jsonify(build_core_status_response(pregunta))
 
+    nova_candidate_response = handle_nova_candidate_query(pregunta)
+    if nova_candidate_response is not None:
+        update_context("nova", pregunta)
+        return jsonify(nova_candidate_response)
+
     available_plugins = list(plugins.keys())
     compound_dispatch = build_compound_dispatch(pregunta, available_plugins)
 
@@ -1696,6 +1786,11 @@ def ask_stream():
 
     if is_system_status_request(normalize_text(pregunta)):
         return jsonify(build_core_status_response(pregunta))
+
+    nova_candidate_response = handle_nova_candidate_query(pregunta)
+    if nova_candidate_response is not None:
+        update_context("nova", pregunta)
+        return jsonify(nova_candidate_response)
 
     available_plugins = list(plugins.keys())
     compound_dispatch = build_compound_dispatch(pregunta, available_plugins)
@@ -2137,6 +2232,36 @@ def pending_action_proposals():
     return jsonify({
         "status": "success",
         "proposals": [action_proposal_store.public(item) for item in proposals],
+    })
+
+
+@app.route("/nova/complex-event-candidates", methods=["GET"])
+@app.route("/api/v1/nova/complex-event-candidates", methods=["GET"])
+def nova_complex_event_candidates():
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+    try:
+        limit = int(request.args.get("limit", "50"))
+    except ValueError:
+        return jsonify({"status": "error", "error": "invalid_limit"}), 400
+    if not 1 <= limit <= 500:
+        return jsonify({"status": "error", "error": "invalid_limit"}), 400
+    try:
+        candidates = fetch_nova_complex_event_candidates(limit)
+    except Exception:
+        return jsonify({
+            "status": "unavailable",
+            "source": "nova",
+            "candidate_type": "complex_event",
+            "candidates": [],
+        }), 503
+    return jsonify({
+        "status": "ok",
+        "source": "nova",
+        "candidate_type": "complex_event",
+        "count": len(candidates),
+        "candidates": candidates,
     })
 
 
