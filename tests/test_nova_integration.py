@@ -160,6 +160,8 @@ class LocalIaNovaBridgeTests(unittest.TestCase):
                 "status": "ok",
                 "nova": "connected",
                 "service": "jinnex-nova",
+                "liveness": True,
+                "readiness": {"ready": True, "status": "ok"},
             }
         )
         with patch.object(core, "NOVA_ENABLED", True), patch.dict(

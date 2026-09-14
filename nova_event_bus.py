@@ -235,6 +235,28 @@ class NovaEventBus:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def health_summary(self) -> dict:
+        """Resumen operativo sin preguntas, payloads ni identificadores de eventos."""
+        now = datetime.now(timezone.utc)
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT CASE WHEN discarded=1 THEN 'discarded' ELSE status END,COUNT(*) "
+                "FROM nova_event_outbox GROUP BY 1"
+            ).fetchall()
+            pending = self._connection.execute(
+                "SELECT MIN(created_at),MAX(updated_at),MAX(attempts) "
+                "FROM nova_event_outbox WHERE status='pending' AND discarded=0"
+            ).fetchone()
+            last_attempt = self._connection.execute(
+                "SELECT MAX(updated_at) FROM nova_event_outbox WHERE attempts>0"
+            ).fetchone()[0]
+        age = max(0, (now-datetime.fromisoformat(pending[0])).total_seconds()) if pending[0] else None
+        return {"counts": dict(rows), "oldest_pending_age_seconds": age,
+                "last_pending_update_at": pending[1], "last_attempt_at": last_attempt,
+                "max_pending_attempts": pending[2] or 0,
+                "worker_running": bool(self._worker and self._worker.is_alive()),
+                "degraded": bool(dict(rows).get('discarded') or (age is not None and age >= 300))}
+
     def _run(self):
         while not self._closed:
             self._wake.wait(self.retry_seconds)

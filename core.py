@@ -1125,20 +1125,23 @@ def check_local_ai_status():
                 status["error"] = f"nova_http_{response.status_code}"
                 return status
             payload = response.json()
-            connected = (
-                isinstance(payload, dict)
-                and payload.get("status") == "ok"
-                and payload.get("nova") == "connected"
-            )
+            readiness = payload.get("readiness", {}) if isinstance(payload, dict) else {}
+            connected = (isinstance(payload, dict) and payload.get("liveness") is True
+                         and readiness.get("ready") is True)
             status["connected"] = connected
             status["model_available"] = connected
-            status["model_loaded"] = connected
-            status["status"] = "connected" if connected else "error"
+            # OpenRouter no permite afirmar que el modelo esté cargado localmente.
+            status["model_loaded"] = False
+            status["readiness"] = readiness
+            status["dependencies"] = payload.get("dependencies", {}) if isinstance(payload, dict) else {}
+            status["checked_at"] = payload.get("checked_at") if isinstance(payload, dict) else None
+            status["degraded"] = isinstance(payload, dict) and payload.get("status") == "degraded"
+            status["status"] = "degraded" if connected and status["degraded"] else "connected" if connected else "error"
             if not connected:
                 status["error"] = "nova_not_ready"
             return status
-        except Exception as exc:
-            status["error"] = str(exc)
+        except Exception:
+            status["error"] = "nova_health_unavailable"
             return status
 
     status = {
@@ -2351,12 +2354,26 @@ def health():
 
     return jsonify({
         "status": "online",
+        "liveness": True,
         "product": product_identity(),
         "plugins": len(plugins),
         "versions": {name: info["version"] for name, info in plugins.items()},
         "plugin_errors": plugin_errors,
         "scene_memory": shared_scene_memory.summary(),
+        "nova_outbox": nova_outbox_health(),
     })
+
+
+def nova_outbox_health():
+    if not NOVA_ENABLED:
+        return {"enabled": False}
+    bus = app.config.get("NOVA_EVENT_BUS") or _nova_event_bus
+    if bus is None:
+        return {"enabled": True, "degraded": True, "error": "outbox_not_initialized"}
+    try:
+        return {"enabled": True, **bus.health_summary()}
+    except Exception:
+        return {"enabled": True, "degraded": True, "error": "outbox_unavailable"}
 
 @app.route("/ai/status", methods=["GET"])
 def ai_status():

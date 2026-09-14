@@ -399,3 +399,12 @@ conversación a Nova. PEARL conserva sus reglas y confirmaciones; las propuestas
 «guarda en Jarvis» conservan aprobación humana obligatoria. Se mantienen los
 identificadores y nombres anteriores por compatibilidad. Ver el reporte
 `/home/samsung-ubuntu/A_proyecto_nuevo/Jinnex_Next/docs/jarvis.md`.
+
+## Salud verificada de Nova · F10
+
+La disponibilidad de Nova se obtiene de `liveness` y `readiness`, con estado de
+dependencias e instante de comprobación. `nova=connected` aislado no basta.
+Los fallos semánticos son visibles como degradación y no se afirma que el modelo
+OpenRouter esté cargado localmente. Core `/health` incluye métricas agregadas
+de la outbox, edad de pendientes y último intento, sin preguntas ni identidades.
+Detalle: `/home/samsung-ubuntu/A_proyecto_nuevo/Jinnex_Next/docs/f07-f10.md`.
