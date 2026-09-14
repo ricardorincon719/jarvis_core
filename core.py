@@ -5,6 +5,7 @@ El core solo orquesta, nunca ejecuta comandos peligrosos.
 """
 
 import json
+import atexit
 import importlib
 import base64
 import hashlib
@@ -35,7 +36,7 @@ from action_policy import (
 from device_sessions import DeviceSessionStore
 from nova_event_bus import NovaEventBus
 from router import is_system_status_request, normalize_text, route_query, update_context
-from flask import Flask, Response, render_template, request, jsonify, stream_with_context
+from flask import g, Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
 
 try:
@@ -324,6 +325,55 @@ def record_auth_failure(req):
 
 def clear_auth_failures(req):
     auth_failures.pop(auth_client_key(req), None)
+
+@app.before_request
+def bind_jinnex_device_identity():
+    # Sólo Core autenticado deriva esta credencial; nunca viene del texto/modelo.
+    session = current_device_session(request)
+    g.jinnex_device_authorization = (
+        request.headers.get("Authorization", "") if session else ""
+    )
+
+
+def handle_jinnex_memory_command(text):
+    match = re.fullmatch(r"/(confirmar_memoria|rechazar_memoria|memorias_pendientes)(?:\s+(\S+))?", text.strip())
+    if match is None:
+        return None
+    authorization = getattr(g, "jinnex_device_authorization", "")
+    if not authorization:
+        return jsonify({"respuesta": "Vincula una sesión de dispositivo para decidir memorias.",
+                        "status": "denied", "plugin": "jinnex"}), 403
+    command, operation_id = match.groups()
+    if command == "memorias_pendientes":
+        if operation_id:
+            return jsonify({"respuesta": "El listado de pendientes no lleva identificador."}), 400
+        body = {"pending": True}
+    else:
+        if not operation_id:
+            return jsonify({"respuesta": "Indica el identificador de la propuesta de memoria."}), 400
+        body = {"confirmation": {"operation_id": operation_id,
+                                 "decision": "approve" if command == "confirmar_memoria" else "reject"}}
+    try:
+        response = requests.post(f"{NOVA_URL}/v1/query", json=body,
+                                 headers={"Authorization": authorization}, timeout=(2, 15))
+        result = response.json()
+        if response.status_code != 200:
+            return jsonify({"respuesta": "No se pudo decidir la propuesta. Puede haber expirado o pertenecer a otra sesión.",
+                            "plugin": "jinnex", "status": "failed"}), response.status_code
+        if command == "memorias_pendientes":
+            pending = result.get("pending", [])
+            lines = [f"{item['summary']}\n/confirmar_memoria {item['operation_id']} o /rechazar_memoria {item['operation_id']}"
+                     for item in pending]
+            answer = "\n\n".join(lines) if lines else "No hay propuestas de memoria pendientes."
+        else:
+            pending = []
+            answer = result["output"]["text"]
+        return jsonify({"respuesta": answer, "plugin": "jinnex", "cerebro": "jinnex",
+                        "status": result['status'], "memory_pending": pending})
+    except (requests.exceptions.RequestException, ValueError, KeyError, TypeError):
+        return jsonify({"respuesta": "Jinnex no está disponible para decidir la memoria. Intenta de nuevo con la misma propuesta.",
+                        "plugin": "jinnex", "status": "failed"}), 503
+
 
 def get_current_lan_ip() -> str:
     """Obtiene la IP LAN actual del dispositivo de forma dinámica."""
@@ -1692,6 +1742,10 @@ def ask():
     print("REMOTE_ADDR:", request.remote_addr)
     print("HOST:", request.host)
 
+    memory_decision = handle_jinnex_memory_command(pregunta)
+    if memory_decision is not None:
+        return memory_decision
+
     natural_decision = maybe_handle_natural_action_decision(pregunta, request)
     if natural_decision is not None:
         payload, status_code = natural_decision
@@ -1778,6 +1832,10 @@ def ask_stream():
     print(f"\n📨 Consulta streaming: {pregunta}")
     print("REMOTE_ADDR:", request.remote_addr)
     print("HOST:", request.host)
+
+    memory_decision = handle_jinnex_memory_command(pregunta)
+    if memory_decision is not None:
+        return memory_decision
 
     natural_decision = maybe_handle_natural_action_decision(pregunta, request)
     if natural_decision is not None:
@@ -2325,8 +2383,19 @@ def network():
     })
 
 
-if __name__ == "__main__":
+def start_runtime():
+    """Inicializar también la entrega de observaciones pendientes tras reiniciar."""
     load_plugins()
+    try:
+        bus = get_nova_event_bus()
+        if bus is not None:
+            atexit.register(bus.close)
+    except Exception:
+        app.logger.error("No se pudo iniciar la cola de observaciones Nova.")
+
+
+if __name__ == "__main__":
+    start_runtime()
     print("\n🚀 JARVIS CORE iniciado")
     print(f"   🌐 http://localhost:{CORE_PORT}")
     print(f"   📦 Plugins activos: {len(plugins)}\n")

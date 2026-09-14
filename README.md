@@ -59,6 +59,28 @@ Puertos del despliegue de referencia:
 
 El nombre de red habitual de la laptop desde el celular es `jarvis-node.local`.
 
+### Memorias Jinnex y observador Nova
+
+Con una sesión de dispositivo vinculada, las propuestas de memoria muestran un
+resumen y los comandos `/confirmar_memoria ID_PROPUESTA` y
+`/rechazar_memoria ID_PROPUESTA`. `/memorias_pendientes` recupera la lista del
+servidor. Core intercepta esos comandos antes del router/modelo; las propuestas
+estructuradas se conservan también en el evento final de streaming. El token
+maestro no autoriza estas decisiones y un canal distinto no decide la propuesta.
+Requiere el bridge Jinnex con el contrato de confirmación activado.
+
+Cuando `PEARL_NOVA_ENABLED=true`, el arranque de Core inicia la outbox existente
+sin necesitar una nueva publicación. La entrega valida un candidato del evento
+original con `auto_execute=false`; los fallos usan backoff hasta ocho intentos y
+descarte con evidencia. El observador no repite la orden física. Un fallo de
+inicialización se registra sin impedir el arranque del Core.
+
+Los cambios F01–F06 están activados desde el 2026-09-14, con respaldos privados,
+preparación de Nova y pruebas funcionales reales. La outbox preexistente quedó
+entregada sin repetir órdenes físicas. El reporte completo y el runner aislado están en
+`/home/samsung-ubuntu/A_proyecto_nuevo/Jinnex_Next/docs/f01-f06.md` y
+`docs/f01-f06/run_pearl_tests.py` del mismo checkout Jinnex.
+
 ## Ediciones
 
 ### PEARL Lite
@@ -367,3 +389,13 @@ Antes de probar acciones físicas, verifica el dispositivo y el nodo destino. La
 ## Licencia
 
 Consulta [LICENSE](LICENSE).
+
+## Nombre general Jarvis · 2026-09-14
+
+Jarvis es el nombre general visible del sistema. Las solicitudes «Jarvis, …»
+entran al router de Jinnex por `local_ia`, con sesión autenticada cuando procede.
+Jinnex deriva órdenes del hogar a PEARL, análisis/planificación a Codex y la
+conversación a Nova. PEARL conserva sus reglas y confirmaciones; las propuestas
+«guarda en Jarvis» conservan aprobación humana obligatoria. Se mantienen los
+identificadores y nombres anteriores por compatibilidad. Ver el reporte
+`/home/samsung-ubuntu/A_proyecto_nuevo/Jinnex_Next/docs/jarvis.md`.

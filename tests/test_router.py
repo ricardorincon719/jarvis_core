@@ -1,6 +1,6 @@
 import unittest
 
-from router import route_query
+from router import is_explicit_ai_assistant_request, route_query
 
 
 class RouterTest(unittest.TestCase):
@@ -36,6 +36,21 @@ class RouterTest(unittest.TestCase):
             route_query("Nova, explícame la escena de lectura", plugins),
             "local_ia",
         )
+
+    def test_jinnex_alias_and_memory_destination_precede_domain_scoring(self):
+        for name in ('jarvis', 'jinnex', 'jinnez', 'ginnex', 'ginnes', 'chinnese'):
+            for text in (f'{name}, explica mi escena de luz azul',
+                         f'guarda en {name} que mi color es rojo',
+                         f'guarda mi color rojo en {name}',
+                         f'guarda esto en {name}: mi lámpara es azul'):
+                with self.subTest(text=text):
+                    self.assertEqual(route_query(text, self.plugins), 'local_ia')
+
+    def test_alias_inside_data_and_unknown_similar_names_are_not_invocations(self):
+        for text in ('mi vecino ginnes vive aquí', 'ginnexican es un nombre',
+                     'guarda en ginnexican que mi color es rojo',
+                     'guarda en guinness que dato'):
+            self.assertFalse(is_explicit_ai_assistant_request(text))
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 # =========================
 
 CONTEXT_TTL = 300  # segundos: 5 minutos de contexto útil
+JINNEX_NAME_PATTERN = r"(?:jarvis|jinnex|jinnez|ginnex|ginnes|chinnese)"
 
 GLOBAL_STOP_WORDS = {
     "stop", "parar", "para", "detener", "detene", "deten", "pausa",
@@ -301,7 +302,15 @@ def is_system_status_request(text: str) -> bool:
 
 
 def is_explicit_ai_assistant_request(text: str) -> bool:
-    return re.match(r"^(?:nova|codex)\b", text) is not None
+    if re.match(rf"^(?:nova|codex|{JINNEX_NAME_PATTERN})\b", text):
+        return True
+    # El bridge valida la propuesta; mencionar colores/luces en el dato no
+    # convierte una petición explícita de memoria en una orden de domótica.
+    return re.match(
+        rf"^guarda\s+(?:(?:esto\s+)?en\s+{JINNEX_NAME_PATTERN}\b|"
+        rf".+\s+en\s+{JINNEX_NAME_PATTERN}\s*$)",
+        text,
+    ) is not None
 
 
 def has_music_local_hint(text: str) -> bool:

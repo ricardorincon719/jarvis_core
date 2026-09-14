@@ -24,6 +24,8 @@ class NovaEventBus:
         retry_seconds: float = 15.0,
         http_post: Callable | None = None,
         start_worker: bool = True,
+        max_attempts: int = 8,
+        clock: Callable = time.time,
     ):
         self.database_path = str(database_path)
         if self.database_path != ":memory:":
@@ -34,6 +36,8 @@ class NovaEventBus:
         self.timeout_seconds = max(0.2, float(timeout_seconds))
         self.retry_seconds = max(1.0, float(retry_seconds))
         self.http_post = http_post or requests.post
+        self.max_attempts = max(1, int(max_attempts))
+        self.clock = clock
         self._connection = sqlite3.connect(
             self.database_path,
             check_same_thread=False,
@@ -46,6 +50,7 @@ class NovaEventBus:
         self._create_schema()
         self._worker = None
         if start_worker:
+            self._wake.set()  # La cola existente se atiende al arrancar.
             self._worker = threading.Thread(
                 target=self._run,
                 name="pearl-nova-event-bus",
@@ -70,6 +75,17 @@ class NovaEventBus:
                 )
                 """
             )
+
+            columns = {row[1] for row in self._connection.execute(
+                "PRAGMA table_info(nova_event_outbox)")}
+            for name, definition in (("discarded", "INTEGER NOT NULL DEFAULT 0"),
+                                     ("next_attempt_at", "REAL NOT NULL DEFAULT 0")):
+                if name not in columns:
+                    self._connection.execute(
+                        f"ALTER TABLE nova_event_outbox ADD COLUMN {name} {definition}")
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS outbox_ready ON nova_event_outbox"
+                "(status,discarded,next_attempt_at,created_at)")
 
     def publish_compound_response(self, prompt: str, response: dict) -> str | None:
         envelope = self.build_compound_event(prompt, response)
@@ -139,17 +155,20 @@ class NovaEventBus:
         with self._lock:
             rows = self._connection.execute(
                 """
-                SELECT event_id, envelope_json
+                SELECT event_id, envelope_json, attempts
                 FROM nova_event_outbox
-                WHERE status = 'pending'
-                ORDER BY created_at, event_id
+                WHERE status = 'pending' AND discarded=0 AND next_attempt_at <= ?
+                ORDER BY next_attempt_at, created_at, event_id
                 LIMIT 100
-                """
+                """, (self.clock(),)
             ).fetchall()
         delivered = 0
         for row in rows:
+            if self._closed:
+                break
             event_id = row["event_id"]
             error = None
+            permanent = False
             try:
                 response = self.http_post(
                     f"{self.nova_url}/v1/events",
@@ -158,6 +177,17 @@ class NovaEventBus:
                 )
                 if not 200 <= response.status_code < 300:
                     error = f"http_{response.status_code}"
+                    permanent = response.status_code in {400, 401, 403, 404, 410, 422}
+                    if response.status_code == 409:
+                        permanent = response.json().get("error", {}).get("code") == "idempotency_conflict"
+                else:
+                    body = response.json()
+                    output = body.get("output", {}) if isinstance(body, dict) else {}
+                    candidate = output.get("complex_event", {}) if isinstance(output, dict) else {}
+                    if (body.get("status") != "succeeded" or output.get("status") != "candidate"
+                            or candidate.get("source_event_id") != event_id
+                            or candidate.get("auto_execute") is not False):
+                        error = "invalid_delivery_response"
             except Exception as exc:
                 error = type(exc).__name__
             now = datetime.now(timezone.utc).isoformat()
@@ -177,10 +207,19 @@ class NovaEventBus:
                     self._connection.execute(
                         """
                         UPDATE nova_event_outbox
-                        SET attempts = attempts + 1, last_error = ?, updated_at = ?
+                        SET attempts = attempts + 1, last_error = ?, updated_at = ?,
+                            discarded = ?, next_attempt_at = ?
                         WHERE event_id = ? AND status = 'pending'
                         """,
-                        (error, now, event_id),
+                        (
+                            error, now,
+                            int(permanent or row["attempts"] + 1 >= self.max_attempts),
+                            self.clock() + min(
+                                300.0,
+                                self.retry_seconds * 2 ** min(row["attempts"], 8),
+                            ),
+                            event_id,
+                        ),
                     )
         return delivered
 
@@ -188,7 +227,8 @@ class NovaEventBus:
         with self._lock:
             rows = self._connection.execute(
                 """
-                SELECT event_id, status, attempts, last_error
+                SELECT event_id, CASE WHEN discarded=1 THEN 'discarded' ELSE status END AS status,
+                       attempts, last_error, next_attempt_at
                 FROM nova_event_outbox
                 ORDER BY created_at, event_id
                 """
@@ -207,9 +247,11 @@ class NovaEventBus:
                 time.sleep(min(self.retry_seconds, 2.0))
 
     def close(self):
+        if self._closed:
+            return
         self._closed = True
         self._wake.set()
         if self._worker is not None:
-            self._worker.join(timeout=2.0)
+            self._worker.join()
         with self._lock:
             self._connection.close()

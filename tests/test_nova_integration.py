@@ -252,7 +252,11 @@ class NovaEventBusTests(unittest.TestCase):
 
         def post(url, **kwargs):
             delivered.append((url, kwargs["json"]))
-            return FakeResponse(status_code=200)
+            return FakeResponse(status_code=200, payload={
+                "status": "succeeded", "output": {"status": "candidate", "complex_event": {
+                    "source_event_id": kwargs["json"]["event_id"], "auto_execute": False,
+                }},
+            })
 
         response = {
             "compound": True,

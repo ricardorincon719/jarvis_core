@@ -167,13 +167,14 @@ def _jinnex_query(prompt):
             )
         return None
     try:
+        from flask import g, has_request_context
+        authorization = getattr(g, "jinnex_device_authorization", "") if has_request_context() else ""
+        body = {"message": prompt, "event_id": "pearl-chat-" + uuid.uuid4().hex}
+        if not authorization:
+            body["session_id"] = NOVA_SESSION_ID
         response = requests.post(
-            f"{NOVA_BRIDGE_URL}/v1/query",
-            json={
-                "message": prompt,
-                "session_id": NOVA_SESSION_ID,
-                "event_id": "pearl-chat-" + uuid.uuid4().hex,
-            },
+            f"{NOVA_BRIDGE_URL}/v1/query", json=body,
+            headers={"Authorization": authorization} if authorization else {},
             timeout=(2, NOVA_TIMEOUT_SECONDS),
         )
         try:
@@ -203,8 +204,20 @@ def _jinnex_query(prompt):
             model = "nova-2.0.1"
         if not isinstance(answer, str) or not answer.strip():
             return None
+        proposal = output.get("integrations", {}).get("jinnex_memory_write", {})
+        public_proposal = None
+        if isinstance(proposal, dict) and proposal.get("status") == "confirmation_required":
+            operation_id = str(proposal.get("request_id") or "")
+            public_proposal = {"operation_id": operation_id, "status": "confirmation_required",
+                               "summary": str(proposal.get("summary") or "Guardar memoria en Jarvis")}
+            if authorization:
+                answer += (f"\n\nPropuesta pendiente: {public_proposal['summary']}\n"
+                           f"/confirmar_memoria {operation_id} o /rechazar_memoria {operation_id}")
+            else:
+                answer += "\nLa propuesta está pendiente. Usa una sesión de dispositivo para proponer y confirmar memoria desde PEARL."
         return {
             "respuesta": answer.strip(),
+            "memory_proposal": public_proposal,
             "cerebro": assistant,
             "status": "success",
             "model": model,
@@ -245,15 +258,18 @@ def _error_event(message):
     ) + "\n"
 
 
-def _done_event(response, model=None, status="success"):
+def _done_event(response, model=None, status="success", memory_proposal=None):
+    event = {
+        "event": "done",
+        "status": status,
+        "plugin": NAME,
+        "model": model or OPENROUTER_MODEL,
+        "response": response,
+    }
+    if memory_proposal is not None:
+        event["memory_proposal"] = memory_proposal
     return json.dumps(
-        {
-            "event": "done",
-            "status": status,
-            "plugin": NAME,
-            "model": model or OPENROUTER_MODEL,
-            "response": response,
-        },
+        event,
         ensure_ascii=False,
     ) + "\n"
 
@@ -350,6 +366,7 @@ def handle_stream(prompt):
             answer,
             jinnex_response["model"],
             jinnex_response["status"],
+            memory_proposal=jinnex_response.get("memory_proposal"),
         )
         return
 
