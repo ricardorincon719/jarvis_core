@@ -19,7 +19,7 @@ class DeviceSessionStoreTest(unittest.TestCase):
 
             self.assertEqual(session["device_id"], "phone-1")
             self.assertNotIn(token, raw_data)
-            self.assertEqual(json.loads(raw_data)["schema_version"], 2)
+            self.assertEqual(json.loads(raw_data)["schema_version"], 3)
 
     def test_session_can_store_device_public_key(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -30,6 +30,24 @@ class DeviceSessionStoreTest(unittest.TestCase):
             session = store.validate(token)
 
             self.assertEqual(session["device_public_key"], "public-key")
+
+    def test_session_persists_audience_and_deduplicated_scopes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "device_sessions.json"
+            store = DeviceSessionStore(path, ttl_seconds=100, now_fn=lambda: 1000)
+            token = store.issue(
+                "watch-1",
+                "Jarvis Watch",
+                device_public_key="public-key",
+                audience="jinnex-watch",
+                scopes=("nova.chat", "codex.read", "nova.chat"),
+            )
+
+            session = store.validate(token)
+
+            self.assertEqual(session["audience"], "jinnex-watch")
+            self.assertEqual(session["scopes"], ["codex.read", "nova.chat"])
+            self.assertEqual(json.loads(path.read_text())["schema_version"], 3)
 
     def test_session_expires_and_is_removed(self):
         with tempfile.TemporaryDirectory() as temp_dir:

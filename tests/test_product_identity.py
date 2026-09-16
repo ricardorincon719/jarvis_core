@@ -77,7 +77,58 @@ class ProductIdentityTest(unittest.TestCase):
             reloaded_store = DeviceSessionStore(path, ttl_seconds=100)
 
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(reloaded_store.validate(token)["device_id"], "phone-1")
+            session = reloaded_store.validate(token)
+            self.assertEqual(session["device_id"], "phone-1")
+            self.assertEqual(session["audience"], "pearl-client")
+            self.assertEqual(
+                set(session["scopes"]),
+                {"pearl.ask", "jinnex.query", "jinnex.memory.decide"},
+            )
+
+    def test_watch_pairing_issues_fixed_audience_and_scopes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DeviceSessionStore(Path(temp_dir) / "sessions.json", ttl_seconds=100)
+            auth_plugin = {"module": SimpleNamespace(authenticate=lambda pin: pin == "1234")}
+            headers = {"X-Jinnex-Client-Key": "a" * 64}
+            with patch.object(core, "device_session_store", store), patch.dict(
+                core.plugins, {"auth": auth_plugin}, clear=True
+            ):
+                response = self.client.post(
+                    "/api/v1/auth/jinnex-watch",
+                    json={"pin": "1234", "device_id": "watch-1",
+                          "device_name": "Jarvis Watch", "device_public_key": "public-key"},
+                    headers=headers,
+                )
+
+            payload = response.get_json()
+            session = store.validate(payload["token"].removeprefix("Bearer "))
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(session["audience"], "jinnex-watch")
+            self.assertEqual(set(session["scopes"]), set(core.JINNEX_WATCH_SCOPES))
+
+    def test_watch_pairing_lockout_isolated_by_trusted_ingress_key(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = DeviceSessionStore(Path(temp_dir) / "sessions.json", ttl_seconds=100)
+            auth_plugin = {"module": SimpleNamespace(authenticate=lambda pin: False)}
+            payload = {"pin": "bad", "device_id": "watch-1",
+                       "device_name": "Jarvis Watch", "device_public_key": "public-key"}
+            with patch.object(core, "device_session_store", store), patch.dict(
+                core.plugins, {"auth": auth_plugin}, clear=True
+            ), patch.object(core, "auth_failures", {}):
+                for _ in range(core.AUTH_MAX_ATTEMPTS):
+                    first = self.client.post(
+                        "/api/v1/auth/jinnex-watch", json=payload,
+                        headers={"X-Jinnex-Client-Key": "a" * 64})
+                blocked = self.client.post(
+                    "/api/v1/auth/jinnex-watch", json=payload,
+                    headers={"X-Jinnex-Client-Key": "a" * 64})
+                independent = self.client.post(
+                    "/api/v1/auth/jinnex-watch", json=payload,
+                    headers={"X-Jinnex-Client-Key": "b" * 64})
+
+            self.assertEqual(first.status_code, 403)
+            self.assertEqual(blocked.status_code, 429)
+            self.assertEqual(independent.status_code, 403)
 
 if __name__ == "__main__":
     unittest.main()

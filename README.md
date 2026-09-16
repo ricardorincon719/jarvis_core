@@ -194,7 +194,7 @@ Las peticiones autenticadas usan:
 Authorization: Bearer <token>
 ```
 
-El primer registro de un dispositivo se realiza mediante PIN. El Core crea un token de sesión, guarda únicamente su hash y permite revocarlo. Android puede asociar la sesión a una clave pública generada con Keystore y firmar peticiones sensibles.
+El primer registro de un dispositivo se realiza mediante PIN. El Core crea un token de sesión, guarda únicamente su hash y permite revocarlo. Cada sesión declara audiencia y scopes. Android puede asociar la sesión a una clave pública generada con Keystore y firmar peticiones sensibles. El bridge Jinnex usa desde loopback una ruta exclusiva para Watch cuyos scopes se fijan en el servidor; no acepta capacidades elegidas por el cliente.
 
 El token maestro se conserva por compatibilidad, pero debe mantenerse local y no distribuirse a clientes.
 
@@ -222,6 +222,7 @@ La API estable nueva usa `/api/v1`; durante la Beta se mantienen rutas compatibl
 | `POST` | `/ask` | Procesa una consulta JSON |
 | `POST` | `/ask_stream` | Consulta con respuesta streaming |
 | `POST` | `/ask_auth`, `/api/v1/auth/pin` | Autoriza por PIN |
+| `POST` | `/api/v1/auth/jinnex-watch` | Vincula Watch sólo desde el bridge loopback |
 | `GET` | `/auth/session`, `/api/v1/auth/session` | Valida una sesión |
 | `POST` | `/auth/logout`, `/api/v1/auth/logout` | Revoca una sesión |
 

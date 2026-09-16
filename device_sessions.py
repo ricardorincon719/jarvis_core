@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class DeviceSessionStore:
@@ -25,13 +25,23 @@ class DeviceSessionStore:
         self.now_fn = now_fn
         self._lock = threading.Lock()
 
-    def issue(self, device_id: str = "", device_name: str = "", device_public_key: str = "") -> str:
+    def issue(
+        self,
+        device_id: str = "",
+        device_name: str = "",
+        device_public_key: str = "",
+        *,
+        audience: str = "pearl-client",
+        scopes=(),
+    ) -> str:
         token = secrets.token_urlsafe(32)
         now = self.now_fn()
         session = {
             "device_id": self._clean(device_id, "unknown", 120),
             "device_name": self._clean(device_name, "PEARL Client", 120),
             "device_public_key": self._clean(device_public_key, "", 4096),
+            "audience": self._clean(audience, "pearl-client", 120),
+            "scopes": self._clean_scopes(scopes),
             "created_at": now,
             "expires_at": now + self.ttl_seconds,
         }
@@ -112,6 +122,17 @@ class DeviceSessionStore:
     def _clean(value: str, default: str, max_length: int) -> str:
         clean_value = str(value or "").strip()
         return (clean_value or default)[:max_length]
+
+    @staticmethod
+    def _clean_scopes(scopes):
+        if isinstance(scopes, str):
+            scopes = scopes.split(",")
+        cleaned = {
+            str(scope).strip()[:120]
+            for scope in scopes
+            if str(scope).strip()
+        }
+        return sorted(cleaned)
 
     @staticmethod
     def _active_sessions(sessions: Dict, now: float) -> Dict:

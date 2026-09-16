@@ -99,6 +99,19 @@ DEVICE_SESSION_MAX = int(os.getenv("PEARL_DEVICE_SESSION_MAX", "100"))
 DEVICE_SESSIONS_FILE = Path(os.getenv("PEARL_DEVICE_SESSIONS_FILE", str(Path.home() / ".local/share/pearl-home/device_sessions.json")))
 AUTH_MAX_ATTEMPTS = int(os.getenv("JARVIS_AUTH_MAX_ATTEMPTS", "5"))
 AUTH_LOCKOUT_SECONDS = int(os.getenv("JARVIS_AUTH_LOCKOUT_SECONDS", "300"))
+JINNEX_WATCH_SCOPES = tuple(
+    scope.strip()
+    for scope in os.getenv(
+        "PEARL_JINNEX_WATCH_SCOPES",
+        "nova.chat,codex.read,pearl.query,jinnex.memory.decide",
+    ).split(",")
+    if scope.strip()
+)
+JINNEX_WATCH_DEVICE_ALLOWLIST = frozenset(
+    device_id.strip()
+    for device_id in os.getenv("PEARL_JINNEX_WATCH_DEVICE_ALLOWLIST", "").split(",")
+    if device_id.strip()
+)
 BRANCHES_DIR = Path(os.getenv("JARVIS_BRANCHES_DIR", str(BASE_DIR / "branches")))
 MANIFEST_FILE = Path(os.getenv("JARVIS_MANIFEST_FILE", str(BASE_DIR / "plugin_manifest.json")))
 AI_PROVIDER = os.getenv("JARVIS_AI_PROVIDER", "local").strip().lower() or "local"
@@ -271,11 +284,20 @@ def cleanup_expired_sessions():
     return device_session_store.prune()
 
 
-def issue_session_token(device_id: str = "", device_name: str = "", device_public_key: str = "") -> str:
+def issue_session_token(
+    device_id: str = "",
+    device_name: str = "",
+    device_public_key: str = "",
+    *,
+    audience: str = "pearl-client",
+    scopes=("pearl.ask", "jinnex.query", "jinnex.memory.decide"),
+) -> str:
     return device_session_store.issue(
         device_id=device_id,
         device_name=device_name,
         device_public_key=device_public_key,
+        audience=audience,
+        scopes=scopes,
     )
 
 
@@ -291,6 +313,13 @@ def current_device_session(req):
 
 
 def auth_client_key(req) -> str:
+    forwarded = req.headers.get("X-Jinnex-Client-Key", "").strip().lower()
+    try:
+        is_loopback = ipaddress.ip_address(req.remote_addr or "").is_loopback
+    except ValueError:
+        is_loopback = False
+    if is_loopback and re.fullmatch(r"[0-9a-f]{64}", forwarded):
+        return f"jinnex:{forwarded}"
     return (req.remote_addr or "unknown").strip() or "unknown"
 
 
@@ -1975,6 +2004,60 @@ def ask_auth():
     except Exception as e:
         print(f"Error interno auth: {type(e).__name__}: {e}")
         return jsonify({"success": False, "message": f"Error interno auth: {type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/v1/auth/jinnex-watch", methods=["POST"])
+def jinnex_watch_auth():
+    """Emparejamiento local con audiencia y capacidades fijadas por PEARL."""
+    try:
+        if not ipaddress.ip_address(request.remote_addr or "").is_loopback:
+            return jsonify({"success": False, "message": "Ruta disponible sólo en loopback."}), 403
+    except ValueError:
+        return jsonify({"success": False, "message": "Origen local inválido."}), 403
+
+    lockout = auth_lockout_response(request)
+    if lockout is not None:
+        return lockout
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
+    allowed = {"pin", "device_id", "device_name", "device_public_key"}
+    if set(data) - allowed:
+        return jsonify({"success": False, "message": "Campos de emparejamiento no permitidos."}), 400
+    pin = str(data.get("pin") or "").strip()
+    device_id = str(data.get("device_id") or "").strip()
+    device_name = str(data.get("device_name") or "Jarvis Watch").strip()
+    public_key = str(data.get("device_public_key") or "").strip()
+    if not pin or not device_id or not public_key:
+        return jsonify({"success": False, "message": "PIN, dispositivo y clave pública son obligatorios."}), 400
+    if JINNEX_WATCH_DEVICE_ALLOWLIST and device_id not in JINNEX_WATCH_DEVICE_ALLOWLIST:
+        return jsonify({"success": False, "message": "Este reloj no está autorizado."}), 403
+    try:
+        module = plugins.get("auth", {}).get("module")
+        if module is None or not hasattr(module, "authenticate"):
+            return jsonify({"success": False, "message": "Plugin auth no disponible."}), 500
+        if not module.authenticate(pin):
+            record_auth_failure(request)
+            return jsonify({"success": False, "message": "PIN incorrecto."}), 403
+        clear_auth_failures(request)
+        token = issue_session_token(
+            device_id=device_id,
+            device_name=device_name,
+            device_public_key=public_key,
+            audience="jinnex-watch",
+            scopes=JINNEX_WATCH_SCOPES,
+        )
+        session = device_session_store.validate(token) or {}
+        return jsonify({
+            "success": True,
+            "message": "Reloj vinculado.",
+            "token": f"Bearer {token}",
+            "expires_in": SESSION_TTL_SECONDS,
+            "session": session,
+        })
+    except Exception as exc:
+        print(f"Error interno auth Watch: {type(exc).__name__}: {exc}")
+        return jsonify({"success": False, "message": "No se pudo vincular el reloj."}), 500
 
 
 @app.route("/auth/session", methods=["GET"])

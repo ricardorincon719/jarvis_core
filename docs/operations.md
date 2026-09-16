@@ -105,9 +105,17 @@ Contratos compatibles:
 ```text
 POST /ask_auth
 POST /api/v1/auth/pin
+POST /api/v1/auth/jinnex-watch  # sólo loopback; uso del bridge Jinnex
 GET  /api/v1/auth/session
 POST /api/v1/auth/logout
 ```
+
+Las sesiones genéricas nuevas usan audiencia `pearl-client` y scopes
+`pearl.ask`, `jinnex.query` y `jinnex.memory.decide`. La ruta interna del reloj
+no acepta scopes enviados por el cliente: fija audiencia `jinnex-watch` y la
+lista de capacidades de Jinnex en el servidor. `X-Jinnex-Client-Key` sólo se
+considera cuando la conexión llega desde loopback y sirve para aislar cuotas de
+PIN; no es una credencial de sesión.
 
 ## Consentimiento para acciones
 
