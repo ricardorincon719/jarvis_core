@@ -86,7 +86,24 @@ def env_float(name: str, default: str) -> float:
         return float(default)
 
 
-SECRET_TOKEN = os.getenv("JARVIS_SECRET_TOKEN", "jarvis_local_123")
+INSECURE_SECRET_TOKENS = frozenset({"jarvis_local_123"})
+MIN_SECRET_TOKEN_LENGTH = 32
+
+
+def configured_master_token(value: str) -> str:
+    """Deshabilita el token maestro si falta, es corto o es un valor publicado."""
+    value = (value or "").strip()
+    if value in INSECURE_SECRET_TOKENS or len(value) < MIN_SECRET_TOKEN_LENGTH:
+        return ""
+    return value
+
+
+SECRET_TOKEN = configured_master_token(os.getenv("JARVIS_SECRET_TOKEN", ""))
+if not SECRET_TOKEN:
+    print(
+        "⚠️ JARVIS_SECRET_TOKEN ausente o inseguro: token maestro deshabilitado. "
+        f"Usa un valor aleatorio de al menos {MIN_SECRET_TOKEN_LENGTH} caracteres."
+    )
 CORE_HOST = os.getenv("JARVIS_CORE_HOST", "0.0.0.0")
 CORE_PORT = int(os.getenv("JARVIS_CORE_PORT", "5004"))
 CORE_DEBUG = os.getenv("JARVIS_CORE_DEBUG", "false").lower() in {"1", "true", "yes"}
@@ -267,9 +284,13 @@ def token_valido(req) -> bool:
     token = bearer_token(req)
     if not token:
         return False
-    if hmac.compare_digest(token, SECRET_TOKEN):
+    if is_master_token(token):
         return True
     return session_token_valido(token)
+
+
+def is_master_token(token: str) -> bool:
+    return bool(SECRET_TOKEN and token) and hmac.compare_digest(token, SECRET_TOKEN)
 
 
 def bearer_token(req) -> str:
@@ -307,18 +328,38 @@ def session_token_valido(token: str) -> bool:
 
 def current_device_session(req):
     token = bearer_token(req)
-    if not token or hmac.compare_digest(token, SECRET_TOKEN):
+    if not token or is_master_token(token):
         return None
     return device_session_store.validate(token)
 
 
-def auth_client_key(req) -> str:
-    forwarded = req.headers.get("X-Jinnex-Client-Key", "").strip().lower()
+def is_loopback_request(req) -> bool:
     try:
-        is_loopback = ipaddress.ip_address(req.remote_addr or "").is_loopback
+        return ipaddress.ip_address(req.remote_addr or "").is_loopback
     except ValueError:
-        is_loopback = False
-    if is_loopback and re.fullmatch(r"[0-9a-f]{64}", forwarded):
+        return False
+
+
+def tunnel_client_ip(req) -> str:
+    """IP pública fijada por Cloudflare; vacía si la petición no viene del túnel."""
+    if not is_loopback_request(req):
+        return ""
+    forwarded = req.headers.get("CF-Connecting-IP", "").strip()
+    if not forwarded:
+        return ""
+    try:
+        return str(ipaddress.ip_address(forwarded))
+    except ValueError:
+        return "invalid"
+
+
+def auth_client_key(req) -> str:
+    # Detrás del túnel todo llega desde loopback: se identifica por la IP real.
+    tunnel_ip = tunnel_client_ip(req)
+    if tunnel_ip:
+        return f"tunnel:{tunnel_ip}"
+    forwarded = req.headers.get("X-Jinnex-Client-Key", "").strip().lower()
+    if is_loopback_request(req) and re.fullmatch(r"[0-9a-f]{64}", forwarded):
         return f"jinnex:{forwarded}"
     return (req.remote_addr or "unknown").strip() or "unknown"
 
@@ -525,7 +566,7 @@ def scene_prompt_gateway_access(req):
         return None, acceso
 
     token = bearer_token(req)
-    if hmac.compare_digest(token, SECRET_TOKEN):
+    if is_master_token(token):
         return {"session_type": "master"}, None
 
     session = current_device_session(req)
@@ -716,7 +757,7 @@ def execute_plugin(plugin_name: str, prompt: str):
 
 def action_requester(req) -> dict:
     token = bearer_token(req)
-    if token and hmac.compare_digest(token, SECRET_TOKEN):
+    if is_master_token(token):
         return {"type": "master", "id": "master", "name": "PEARL master token"}
 
     session = current_device_session(req) or {}
@@ -2009,11 +2050,9 @@ def ask_auth():
 @app.route("/api/v1/auth/jinnex-watch", methods=["POST"])
 def jinnex_watch_auth():
     """Emparejamiento local con audiencia y capacidades fijadas por PEARL."""
-    try:
-        if not ipaddress.ip_address(request.remote_addr or "").is_loopback:
-            return jsonify({"success": False, "message": "Ruta disponible sólo en loopback."}), 403
-    except ValueError:
-        return jsonify({"success": False, "message": "Origen local inválido."}), 403
+    # El puente Jinnex llama directo; lo que entra por el túnel no es local.
+    if not is_loopback_request(request) or request.headers.get("CF-Connecting-IP"):
+        return jsonify({"success": False, "message": "Ruta disponible sólo en loopback."}), 403
 
     lockout = auth_lockout_response(request)
     if lockout is not None:
@@ -2068,7 +2107,7 @@ def auth_session():
         return acceso
 
     token = bearer_token(request)
-    if hmac.compare_digest(token, SECRET_TOKEN):
+    if is_master_token(token):
         return jsonify({
             "valid": True,
             "session_type": "master",
@@ -2094,7 +2133,7 @@ def auth_logout():
         return acceso
 
     token = bearer_token(request)
-    if not token or hmac.compare_digest(token, SECRET_TOKEN):
+    if not token or is_master_token(token):
         return jsonify({"success": False, "error": "device_session_required"}), 400
     if not device_session_store.revoke(token):
         return jsonify({"success": False, "error": "invalid_or_expired_session"}), 403

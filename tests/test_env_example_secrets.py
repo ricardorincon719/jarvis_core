@@ -4,6 +4,8 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 SENSITIVE_EXAMPLE_KEYS = {
+    "JARVIS_SECRET_TOKEN",
+    "JARVIS_AUTH_PIN",
     "SERPAPI_KEY",
     "TUYA_CLOUD_ACCESS_ID",
     "TUYA_CLOUD_ACCESS_KEY",

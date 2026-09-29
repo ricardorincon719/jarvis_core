@@ -60,7 +60,8 @@ Variables principales:
 - `PEARL_DEVICE_SESSIONS_FILE`: ubicacion privada opcional para sesiones persistentes.
 - `PEARL_ACTION_PROPOSAL_TTL_SECONDS`: segundos disponibles para confirmar una accion; default `180`.
 - `PEARL_ACTION_PROPOSALS_FILE`: ubicacion privada opcional del registro de propuestas.
-- `JARVIS_SECRET_TOKEN`: token local del core.
+- `JARVIS_SECRET_TOKEN`: token maestro del core; aleatorio y de al menos 32 caracteres, o queda deshabilitado.
+- `JARVIS_AUTH_PIN`: PIN de emparejamiento; al menos 6 caracteres, o el emparejamiento queda deshabilitado.
 - `JARVIS_CORE_PORT`: puerto del core movil.
 - `PEARL_HUB_API_TIMEOUT`: timeout de llamadas del Core al Hub.
 - `PEARL_CORE_GATEWAY_TOKEN`: secreto opcional compartido con Hub para que decisiones sensibles solo entren por Core.

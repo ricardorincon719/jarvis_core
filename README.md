@@ -164,7 +164,8 @@ La plantilla completa está en [.env.example](.env.example). Variables principal
 | `PEARL_PRODUCT` | Nombre del producto | `PEARL Lite` |
 | `PEARL_EDITION` | Edición activa | `lite` |
 | `PEARL_VERSION` | Versión de API/producto | `0.7.0-beta.1` |
-| `JARVIS_SECRET_TOKEN` | Token maestro local | `jarvis_local_123` |
+| `JARVIS_SECRET_TOKEN` | Token maestro local (aleatorio, >= 32 caracteres) | Obligatorio; si falta, el token maestro queda deshabilitado |
+| `JARVIS_AUTH_PIN` | PIN de emparejamiento (>= 6 caracteres) | Obligatorio; si falta, el emparejamiento por PIN queda deshabilitado |
 | `JARVIS_CORE_HOST` / `JARVIS_CORE_PORT` | Escucha del Core | `0.0.0.0` / `5004` |
 | `JARVIS_ORCHESTRATOR_URL` | URL del Hub | `http://jarvis-node.local:5006` |
 | `JARVIS_MUSIC_HOST` / `JARVIS_MUSIC_PORT` | Nodo musical | `jarvis-node.local` / `5005` |
@@ -184,7 +185,7 @@ La plantilla completa está en [.env.example](.env.example). Variables principal
 | `JARVIS_SCENE_MEMORY_MIN_REPETITIONS` | Repeticiones para candidato | `2` |
 | `JARVIS_SCENE_MEMORY_MIN_UNIQUE_DAYS` | Días únicos para candidato | `2` |
 
-Para una instalación real, cambia especialmente `JARVIS_SECRET_TOKEN` y las claves de Tuya. El valor de `.env.example` es solo de desarrollo.
+`JARVIS_SECRET_TOKEN` y `JARVIS_AUTH_PIN` no tienen valor por defecto: genera el token con `openssl rand -hex 32` y elige un PIN de al menos 6 caracteres.
 
 ## Autenticación y seguridad
 

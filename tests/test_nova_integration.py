@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import os
+os.environ.setdefault("JARVIS_SECRET_TOKEN", "test-master-token-0123456789abcdef")
 import core
 from branches.local_ia.current import plugin as local_ia
 from nova_event_bus import NovaEventBus

@@ -61,7 +61,7 @@
             if (authError) authError.style.display = 'none';
             if (authSuccess) authSuccess.style.display = 'none';
 
-            if (!pin || pin.length < 4) {
+            if (!pin || pin.length < 6) {
                 if (authError) {
                     authError.innerText = '🔒 Acceso denegado';
                     authError.style.display = 'block';

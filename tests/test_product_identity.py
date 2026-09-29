@@ -6,6 +6,8 @@ import unittest
 
 from device_sessions import DeviceSessionStore
 
+import os
+os.environ.setdefault("JARVIS_SECRET_TOKEN", "test-master-token-0123456789abcdef")
 import core
 
 

@@ -1,12 +1,17 @@
 import base64
+import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
+import os
+os.environ.setdefault("JARVIS_SECRET_TOKEN", "test-master-token-0123456789abcdef")
 import core
+from device_sessions import DeviceSessionStore
 
 
 class ScenePromptGatewayTest(unittest.TestCase):
@@ -14,6 +19,13 @@ class ScenePromptGatewayTest(unittest.TestCase):
         core.app.config.update(TESTING=True)
         self.client = core.app.test_client()
         self.headers = {"Authorization": f"Bearer {core.SECRET_TOKEN}"}
+        # Nunca emitir sesiones de prueba en el almacén real del usuario.
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        store = DeviceSessionStore(Path(temp_dir.name) / "sessions.json", ttl_seconds=100)
+        session_patch = patch.object(core, "device_session_store", store)
+        session_patch.start()
+        self.addCleanup(session_patch.stop)
 
     def test_pending_prompts_are_proxied_to_hub(self):
         hub_response = Mock(status_code=200)

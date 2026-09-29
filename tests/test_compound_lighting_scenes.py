@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 from branches.domotica.agent import DomoticaAgent, normalize_text
 import branches.scene_memory as scene_memory
+import os
+os.environ.setdefault("JARVIS_SECRET_TOKEN", "test-master-token-0123456789abcdef")
 import core
 
 
