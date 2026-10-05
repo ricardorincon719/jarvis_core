@@ -301,6 +301,15 @@ def is_system_status_request(text: str) -> bool:
     return has_any_phrase(text, SYSTEM_STATUS_PATTERNS)
 
 
+def is_vision_request(text: str) -> bool:
+    # Import diferido: el plugin importa utilidades de este módulo.
+    try:
+        from branches.vision.current.plugin import can_handle
+    except ImportError:
+        return False
+    return can_handle(text)
+
+
 def is_explicit_ai_assistant_request(text: str) -> bool:
     if re.match(rf"^(?:nova|codex|{JINNEX_NAME_PATTERN})\b", text):
         return True
@@ -449,6 +458,11 @@ def route_query(text: str, available_plugins: List[str]) -> str:
     """
     raw_text = text
     text = normalize_text(text)
+
+    # "Jarvis, ¿cómo me veo?" usa el nombre del asistente pero pide la cámara,
+    # así que la visión va antes que la regla del nombre inicial.
+    if "vision" in available_plugins and is_vision_request(raw_text):
+        return "vision"
 
     # El nombre inicial selecciona el asistente. Jinnex resolverá después la
     # acción exacta sin usar un modelo para clasificar la intención.
