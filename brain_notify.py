@@ -1,9 +1,10 @@
-"""Destellos del router en JARVIS Brain.
+"""Actividad de Core en JARVIS Brain.
 
 Cada vez que Core decide a dónde va una consulta, el cerebelo de la
-visualización destella con el destino. Sólo viaja el nombre del destino,
-nunca el texto. Un único hilo envía los mensajes en orden; si el hub está
-caído se descartan sin afectar a Core. Activo sólo con JINNEX_BRAIN_URL.
+visualización destella con el destino (sólo el nombre, nunca el texto), y
+mientras una acción espera confirmación se enciende la región de aprobación.
+Un único hilo envía los mensajes en orden; si el hub está caído se descartan
+sin afectar a Core. Activo sólo con JINNEX_BRAIN_URL.
 """
 
 import json
@@ -59,16 +60,33 @@ def _run() -> None:
         _post(_queue.get())
 
 
-def pulse_route(*plugins: str) -> None:
-    """Destello del router hacia uno o varios plugins. Nunca bloquea ni falla."""
-    if not os.environ.get("JINNEX_BRAIN_URL") or not plugins:
+def _send(message: dict) -> None:
+    if not os.environ.get("JINNEX_BRAIN_URL"):
         return
     with _lock:
         if not _worker:
-            _worker.append(threading.Thread(target=_run, name="brain-router", daemon=True))
+            _worker.append(threading.Thread(target=_run, name="brain-core", daemon=True))
             _worker[0].start()
     try:
-        _queue.put_nowait({"phase": "pulse", "region": "router", "source": "jarvis_core",
-                           "detail": route_label(plugins)})
+        _queue.put_nowait(message)
     except queue.Full:
         pass
+
+
+def pulse_route(*plugins: str) -> None:
+    """Destello del router hacia uno o varios plugins. Nunca bloquea ni falla."""
+    if plugins:
+        _send({"phase": "pulse", "region": "router", "source": "jarvis_core",
+               "detail": route_label(plugins)})
+
+
+def approval_waiting(proposal_id: str, summary: str, ttl: float) -> None:
+    """Encender la aprobación mientras una propuesta espera la decisión."""
+    _send({"phase": "start", "region": "aprobacion", "id": f"core-proposal:{proposal_id}",
+           "source": "jarvis_core", "detail": summary, "ttl": ttl})
+
+
+def approval_decided(proposal_id: str, ok: bool, reason: str = "") -> None:
+    """Apagar la aprobación: en verde si se ejecutó, en rojo si no."""
+    _send({"phase": "end", "id": f"core-proposal:{proposal_id}", "ok": ok,
+           "reason": reason})

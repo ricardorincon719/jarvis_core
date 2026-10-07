@@ -34,7 +34,7 @@ from action_policy import (
     classify_plan,
 )
 from device_sessions import DeviceSessionStore
-from brain_notify import pulse_route
+from brain_notify import approval_decided, approval_waiting, pulse_route
 from nova_event_bus import NovaEventBus
 from router import (
     classify_query,
@@ -831,6 +831,7 @@ def create_proposal_response(kind: str, envelope: dict, summary: str, req):
         requester=action_requester(req),
     )
     public = action_proposal_store.public(proposal)
+    approval_waiting(proposal["id"], summary, action_proposal_store.ttl_seconds)
     return {
         "respuesta": f"Necesito tu confirmacion para ejecutar: {summary}.",
         "cerebro": "Core",
@@ -1066,6 +1067,7 @@ def apply_action_decision(proposal_id: str, decision: str, idempotency_key: str,
         }, 200
 
     if proposal.get("decision") == "cancel":
+        approval_decided(proposal_id, False, "cancelada")
         public = action_proposal_store.public(proposal)
         return {
             "status": "cancelled",
@@ -1087,6 +1089,7 @@ def apply_action_decision(proposal_id: str, decision: str, idempotency_key: str,
         success = False
 
     completed = action_proposal_store.complete(proposal_id, result, success)
+    approval_decided(proposal_id, success, "" if success else "falló")
     if success and result.get("compound"):
         envelope = proposal.get("plan") or {}
         publish_compound_result_to_nova(envelope.get("prompt") or "", result)
