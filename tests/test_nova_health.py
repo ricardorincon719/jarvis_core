@@ -1,5 +1,7 @@
 """Core consume readiness verificada y resume la cola sin datos privados."""
 
+import isolated_env  # noqa: F401  (antes que core: nunca leer el .env real)
+
 import json
 import tempfile
 import unittest

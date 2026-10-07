@@ -1,3 +1,5 @@
+import isolated_env  # noqa: F401  (antes que core: nunca leer el .env real)
+
 import unittest
 
 from router import is_explicit_ai_assistant_request, route_query

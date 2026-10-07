@@ -1,3 +1,5 @@
+import isolated_env  # noqa: F401  (antes que core: nunca leer el .env real)
+
 from unittest.mock import patch
 import unittest
 

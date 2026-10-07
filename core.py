@@ -56,10 +56,21 @@ CORS(app)
 BASE_DIR = Path(__file__).resolve().parent
 
 
-def load_env_file(path: Path = BASE_DIR / ".env"):
+# JARVIS_ENV_FILE elige otro archivo; vacío desactiva la carga (pruebas aisladas).
+ENV_FILE = os.getenv("JARVIS_ENV_FILE", str(BASE_DIR / ".env"))
+ENV_FILE_LOADED = None
+
+
+def load_env_file(path: Path | None = None):
     """Carga .env simple sin agregar dependencia externa."""
+    global ENV_FILE_LOADED
+    if path is None:
+        if not ENV_FILE:
+            return
+        path = Path(ENV_FILE).expanduser()
     if not path.exists():
         return
+    ENV_FILE_LOADED = path
 
     with open(path, "r", encoding="utf-8") as f:
         for line in f:

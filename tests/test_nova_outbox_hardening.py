@@ -1,3 +1,5 @@
+import isolated_env  # noqa: F401  (antes que core: nunca leer el .env real)
+
 import sqlite3
 import tempfile
 import threading
