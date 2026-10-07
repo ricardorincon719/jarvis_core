@@ -34,6 +34,7 @@ from action_policy import (
     classify_plan,
 )
 from device_sessions import DeviceSessionStore
+from brain_notify import pulse_route
 from nova_event_bus import NovaEventBus
 from router import (
     classify_query,
@@ -1853,6 +1854,7 @@ def ask():
     compound_dispatch = build_compound_dispatch(pregunta, available_plugins)
 
     if compound_dispatch:
+        pulse_route(*(item["plugin"] for item in compound_dispatch))
         print("   🧩 Comando compuesto:")
         for item in compound_dispatch:
             print(f"      - {item['plugin']}: {item['prompt']}")
@@ -1862,6 +1864,7 @@ def ask():
         return jsonify(execute_compound_dispatch(compound_dispatch, original_prompt=pregunta))
 
     plugin_name = route_query(pregunta, available_plugins)
+    pulse_route(plugin_name)
 
     if plugin_name == "domotica":
         proposal = maybe_propose_shared_scene(pregunta, request)
@@ -1917,7 +1920,9 @@ def api_route():
     text = (data.get("text") or "").strip()
     if not text:
         return jsonify({"status": "error", "error": "text_required"}), 400
-    return jsonify({"status": "ok", **classify_query(text, list(plugins.keys()))})
+    classification = classify_query(text, list(plugins.keys()))
+    pulse_route(classification["plugin"])
+    return jsonify({"status": "ok", **classification})
 
 
 @app.route("/ask_stream", methods=["POST"])
@@ -1963,6 +1968,7 @@ def ask_stream():
     compound_dispatch = build_compound_dispatch(pregunta, available_plugins)
 
     if compound_dispatch:
+        pulse_route(*(item["plugin"] for item in compound_dispatch))
         print("   🧩 Comando compuesto streaming:")
         for item in compound_dispatch:
             print(f"      - {item['plugin']}: {item['prompt']}")
@@ -1972,6 +1978,7 @@ def ask_stream():
         return jsonify(execute_compound_dispatch(compound_dispatch, original_prompt=pregunta))
 
     plugin_name = route_query(pregunta, available_plugins)
+    pulse_route(plugin_name)
 
     if plugin_name == "domotica":
         proposal = maybe_propose_shared_scene(pregunta, request)
