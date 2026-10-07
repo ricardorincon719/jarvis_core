@@ -14,8 +14,10 @@ import ipaddress
 import os
 import re
 import socket
+import threading
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 import requests
 from action_proposals import (
@@ -134,6 +136,10 @@ DEVICE_SESSION_MAX = int(os.getenv("PEARL_DEVICE_SESSION_MAX", "100"))
 DEVICE_SESSIONS_FILE = Path(os.getenv("PEARL_DEVICE_SESSIONS_FILE", str(Path.home() / ".local/share/pearl-home/device_sessions.json")))
 AUTH_MAX_ATTEMPTS = int(os.getenv("JARVIS_AUTH_MAX_ATTEMPTS", "5"))
 AUTH_LOCKOUT_SECONDS = int(os.getenv("JARVIS_AUTH_LOCKOUT_SECONDS", "300"))
+# El bloqueo por IP no frena a quien prueba PINs desde muchas IPs: por el túnel
+# (internet) además hay un tope global de fallos, sumando todas las IPs.
+AUTH_TUNNEL_MAX_FAILURES = int(os.getenv("JARVIS_AUTH_TUNNEL_MAX_FAILURES", "20"))
+AUTH_TUNNEL_WINDOW_SECONDS = int(os.getenv("JARVIS_AUTH_TUNNEL_WINDOW_SECONDS", "900"))
 JINNEX_WATCH_SCOPES = tuple(
     scope.strip()
     for scope in os.getenv(
@@ -191,6 +197,8 @@ shared_scene_memory = SharedSceneMemory()
 device_session_store = DeviceSessionStore(DEVICE_SESSIONS_FILE, SESSION_TTL_SECONDS, DEVICE_SESSION_MAX)
 action_proposal_store = ActionProposalStore(ACTION_PROPOSALS_FILE, ACTION_PROPOSAL_TTL_SECONDS)
 auth_failures = {}
+tunnel_auth_failures = deque()
+tunnel_auth_lock = threading.Lock()
 device_signature_nonces = {}
 _nova_event_bus = None
 
@@ -392,7 +400,26 @@ def auth_client_key(req) -> str:
     return (req.remote_addr or "unknown").strip() or "unknown"
 
 
+def tunnel_lockout_seconds(now=None) -> int:
+    """Segundos de pausa del PIN por internet; 0 si no se superó el tope global."""
+    now = time.time() if now is None else now
+    with tunnel_auth_lock:
+        while tunnel_auth_failures and tunnel_auth_failures[0] <= now - AUTH_TUNNEL_WINDOW_SECONDS:
+            tunnel_auth_failures.popleft()
+        if len(tunnel_auth_failures) < AUTH_TUNNEL_MAX_FAILURES:
+            return 0
+        return max(1, int(tunnel_auth_failures[0] + AUTH_TUNNEL_WINDOW_SECONDS - now))
+
+
 def auth_lockout_response(req):
+    if tunnel_client_ip(req):
+        retry_after = tunnel_lockout_seconds()
+        if retry_after:
+            return jsonify({
+                "success": False,
+                "message": "Demasiados intentos desde internet. Intenta de nuevo más tarde.",
+                "retry_after": retry_after,
+            }), 429
     key = auth_client_key(req)
     entry = auth_failures.get(key)
     if not entry:
@@ -414,6 +441,9 @@ def auth_lockout_response(req):
 
 
 def record_auth_failure(req):
+    if tunnel_client_ip(req):
+        with tunnel_auth_lock:
+            tunnel_auth_failures.append(time.time())
     key = auth_client_key(req)
     entry = auth_failures.setdefault(key, {"count": 0, "locked_until": 0})
     entry["count"] += 1

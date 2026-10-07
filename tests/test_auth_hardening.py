@@ -98,6 +98,34 @@ class TunnelLockoutTest(unittest.TestCase):
         self.assertEqual(blocked.status_code, 429)
         self.assertEqual(other_client.status_code, 403)
 
+    def pin_attempt(self, ip=None):
+        headers = {"CF-Connecting-IP": ip} if ip else {}
+        return self.client.post("/api/v1/auth/pin", json={"pin": "000000"}, headers=headers)
+
+    def test_many_internet_ips_hit_a_global_limit(self):
+        auth_plugin = {"module": SimpleNamespace(authenticate=lambda pin: False)}
+        with patch.dict(core.plugins, {"auth": auth_plugin}, clear=True), patch.object(
+            core, "auth_failures", {}
+        ), patch.object(core, "tunnel_auth_failures", core.deque()):
+            # Cada IP queda por debajo de su propio bloqueo (5 intentos).
+            for index in range(core.AUTH_TUNNEL_MAX_FAILURES):
+                response = self.pin_attempt(f"203.0.113.{index}")
+                self.assertEqual(response.status_code, 403)
+            from_new_ip = self.pin_attempt("198.51.100.200")
+            from_lan = self.pin_attempt()
+
+        self.assertEqual(from_new_ip.status_code, 429)
+        self.assertIn("internet", from_new_ip.get_json()["message"])
+        self.assertGreater(from_new_ip.get_json()["retry_after"], 0)
+        self.assertEqual(from_lan.status_code, 403)  # la LAN sigue con su límite por IP
+
+    def test_global_limit_lifts_after_the_window(self):
+        old = core.time.time() - core.AUTH_TUNNEL_WINDOW_SECONDS - 1
+        failures = core.deque([old] * core.AUTH_TUNNEL_MAX_FAILURES)
+        with patch.object(core, "tunnel_auth_failures", failures):
+            self.assertEqual(core.tunnel_lockout_seconds(), 0)
+        self.assertEqual(len(failures), 0)
+
     def test_watch_pairing_rejects_tunnel_traffic(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = DeviceSessionStore(Path(temp_dir) / "sessions.json", ttl_seconds=100)
