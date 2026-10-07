@@ -204,6 +204,9 @@ ACTION_ACCEPT_PHRASES = {
     "si confirma",
     "si hazlo",
     "si por favor",
+    "confirmado",
+    "confirmada",
+    "si confirmado",
 }
 ACTION_CANCEL_PHRASES = {
     "no",
@@ -214,6 +217,13 @@ ACTION_CANCEL_PHRASES = {
     "rechaza",
     "rechazo",
     "no lo hagas",
+    "cancelado",
+    "cancelada",
+    "rechazado",
+    "mejor no",
+    "no gracias",
+    "dejalo",
+    "olvidalo",
 }
 
 COMPOUND_CONNECTOR_RE = re.compile(
@@ -1098,6 +1108,14 @@ def natural_action_decision(prompt: str):
     return None
 
 
+def pending_natural_decision(prompt: str, req) -> bool:
+    """¿Es una decisión ("confirmado", "cancela") con una propuesta esperándola?"""
+    if natural_action_decision(prompt) is None:
+        return False
+    return bool(action_proposal_store.list_pending(action_requester(req),
+                                                   include_all_for_master=False))
+
+
 def maybe_handle_natural_action_decision(prompt: str, req):
     decision = natural_action_decision(prompt)
     if decision is None:
@@ -1920,7 +1938,12 @@ def api_route():
     text = (data.get("text") or "").strip()
     if not text:
         return jsonify({"status": "error", "error": "text_required"}), 400
-    classification = classify_query(text, list(plugins.keys()))
+    if pending_natural_decision(text, request):
+        # "Confirmado" sólo es una orden si este dispositivo tiene una propuesta
+        # pendiente: así Nova la envía a /ask, que la aplica.
+        classification = {"plugin": "core", "kind": "action"}
+    else:
+        classification = classify_query(text, list(plugins.keys()))
     pulse_route(classification["plugin"])
     return jsonify({"status": "ok", **classification})
 

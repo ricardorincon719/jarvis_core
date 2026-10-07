@@ -22,6 +22,7 @@ ROUTE_LABELS = {
     "critical": "crítico",
     "internet": "internet",
     "hardware": "hardware",
+    "core": "confirmación",
 }
 
 _queue: queue.Queue = queue.Queue(maxsize=100)

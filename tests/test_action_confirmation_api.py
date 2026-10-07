@@ -118,6 +118,46 @@ class ActionConfirmationApiTest(unittest.TestCase):
         for phrase in ("ok", "dale", "adelante"):
             self.assertIsNone(core.natural_action_decision(phrase))
 
+    def test_confirmado_and_its_cancel_variants(self):
+        for phrase in ("Confirmado.", "confirmada", "Sí, confirmado"):
+            self.assertEqual(core.natural_action_decision(phrase), "accept")
+        for phrase in ("cancelado", "mejor no", "déjalo", "olvídalo"):
+            self.assertEqual(core.natural_action_decision(phrase), "cancel")
+
+    def test_voice_confirmation_is_routed_as_action_only_with_pending_proposal(self):
+        """Nova pregunta a /api/v1/route y sólo envía a /ask lo que es acción."""
+        module = FakePlannedPlugin("music", "play")
+        plugins = {**self.plugin_registry("music", module),
+                   **self.plugin_registry("local_ia", FakeConversationalPlugin())}
+        with patch.object(core, "action_proposal_store", self.store), patch.object(
+            core, "plugins", plugins
+        ), patch.object(core, "pulse_route"):
+            before = self.client.post("/api/v1/route", headers=self.headers,
+                                      json={"text": "confirmado"}).get_json()
+            with patch.object(core, "route_query", return_value="music"):
+                self.client.post("/ask", headers=self.headers,
+                                 json={"pregunta": "reproduce jazz instrumental"})
+            routed = self.client.post("/api/v1/route", headers=self.headers,
+                                      json={"text": "Confirmado."}).get_json()
+            confirmed = self.client.post("/ask", headers=self.headers,
+                                         json={"pregunta": "Confirmado."})
+
+        self.assertEqual(before["kind"], "assistant")
+        self.assertEqual(routed["kind"], "action")
+        self.assertEqual(confirmed.get_json()["status"], "executed")
+        self.assertEqual(module.executions, 1)
+
+    def test_other_device_cannot_confirm_by_voice(self):
+        module = FakePlannedPlugin("music", "play")
+        with patch.object(core, "action_proposal_store", self.store), patch.object(
+            core, "plugins", self.plugin_registry("music", module)
+        ), patch.object(core, "route_query", return_value="music"):
+            self.client.post("/ask", headers=self.headers,
+                             json={"pregunta": "reproduce jazz"})
+            with patch.object(core, "action_requester",
+                              return_value={"type": "device", "id": "otro", "name": "x"}):
+                self.assertFalse(core.pending_natural_decision("confirmado", None))
+
     def test_level_two_action_waits_for_confirmation_and_executes_once(self):
         module = FakePlannedPlugin("music", "play")
         with patch.object(core, "action_proposal_store", self.store), patch.object(
