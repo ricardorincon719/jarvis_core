@@ -9,6 +9,8 @@ TRIGGERS = ["analiza", "evalúa", "investiga", "optimiza", "estrategia",
             "plan", "proyecto", "sistema", "compara", "recomienda"]
 
 ORCHESTRATOR_URL = os.getenv("JARVIS_ORCHESTRATOR_URL", "http://jarvis-node.local:5006")
+HUB_GATEWAY_TOKEN = os.getenv("PEARL_CORE_GATEWAY_TOKEN", "").strip()
+HUB_HEADERS = {"X-PEARL-Core-Gateway": HUB_GATEWAY_TOKEN} if HUB_GATEWAY_TOKEN else {}
 OPENROUTER_API_URL = os.getenv(
     "OPENROUTER_API_URL",
     "https://openrouter.ai/api/v1",
@@ -84,6 +86,7 @@ def handle(pregunta):
         response = requests.post(
             f"{ORCHESTRATOR_URL}/process",
             json={"prompt": pregunta},
+            headers=HUB_HEADERS,
             timeout=65  # phi3-fast puede tardar
         )
         
@@ -122,6 +125,7 @@ def handle_stream(pregunta):
         with requests.post(
             f"{ORCHESTRATOR_URL}/process",
             json={"prompt": pregunta, "stream": True},
+            headers=HUB_HEADERS,
             timeout=(5, 240),
             stream=True
         ) as response:
