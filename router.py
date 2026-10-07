@@ -197,6 +197,7 @@ HARDWARE_WORDS = {
     "linterna": 10,
     "torch": 8,
     "flash": 8,
+    "vibra": 8,
     "vibrar": 8,
     "vibracion": 8,
     "vibración": 8,
@@ -291,6 +292,83 @@ def compute_keyword_score(text: str, words: Dict[str, int]) -> int:
 
 def has_any_phrase(text: str, phrases) -> bool:
     return any(contains_phrase(text, normalize_text(phrase)) for phrase in phrases)
+
+
+# Plugins conversacionales; el resto actúa sobre la casa, el celular o el
+# sistema. Nova (Jinnex) consulta esta clasificación vía /api/v1/route.
+ASSISTANT_PLUGINS = {"local_ia", "critical", "internet"}
+
+# Filtro estricto (antes vivía en el IntentRouter de Nova): una frase sólo
+# cuenta como orden si empieza con un verbo de acción y nombra su objetivo,
+# o si es un control/estado exacto. Evita que "qué música te gusta" o una
+# transcripción errónea como "apaga la reputación" lleguen a un plugin.
+_HOME_TARGET = re.compile(
+    r"\b(?:luz|luces|lampara|lamparas|bombilla|bombillas|foco|focos|"
+    r"brillo|intensidad|color|colores|escena|escenas|domotica|"
+    r"automatizacion|automatizaciones|patron|patrones|lamp_\w+)\b"
+)
+_HOME_ACTION = re.compile(
+    r"^(?:enciende|encender|prende|prender|apaga|apagar|activa|activar|"
+    r"desactiva|desactivar|pon|poner|cambia|cambiar|ajusta|ajustar|"
+    r"sube|subir|baja|bajar|ejecuta|ejecutar|restaura|restaurar|"
+    r"deshaz|deshacer|lista|listar|muestra|mostrar|ver|dime|consulta|consultar|"
+    r"aprueba|aprobar|aproba|rechaza|rechazar)\b"
+)
+_MUSIC_TARGET = re.compile(
+    r"\b(?:musica|cancion|canciones|playlist|album|artista|reproductor|"
+    r"volumen|jazz|lofi|rock|spotify|youtube)\b"
+)
+_MUSIC_ACTION = re.compile(
+    r"^(?:reproduce|reproducir|pon|poner|toca|tocar|pausa|pausar|"
+    r"deten|detener|para|parar|reanuda|reanudar|sube|subir|baja|bajar|"
+    r"cambia|cambiar|dime|muestra|mostrar)\b"
+)
+_CONTROL_EXACT = re.compile(
+    r"(?:play|stop|parar|para|detener|deten|pausa|silencio|"
+    r"reanuda|reanudar|siguiente|anterior|previo|previous|next|"
+    r"sube el volumen|baja el volumen)"
+)
+_HARDWARE_ACTION = re.compile(
+    r"^(?:(?:enciende|apaga|activa|desactiva)\s+(?:la\s+)?"
+    r"(?:linterna|torch|flash)|vibra|vibrar)\b"
+)
+_DOMAIN_EXACT = re.compile(
+    r"(?:escenas (?:aprendidas|guardadas|candidatas)|patrones|"
+    r"automatizaciones|estado de (?:la luz|las luces)|"
+    r"(?:luz|lampara)\s+.*\b(?:relax|lamp_\w+)\b.*)"
+)
+_PLAY_REQUEST = re.compile(r"^(?:reproduce|reproducir)\b\s+\S")
+# Consultas de estado sin verbo: "estado de la batería", "nivel de bateria".
+_STATUS_QUERY = re.compile(
+    r"^(?:estado|nivel|como esta|como estan)\s+(?:de\s+)?(?:la\s+|el\s+|las\s+|los\s+)?"
+    r"(?:bateria|linterna|luz|luces|lampara|lamparas|musica|reproductor)\b"
+)
+# Atajos de la app que nombran primero el objeto: "lampara relajante sala".
+_OBJECT_FIRST = re.compile(r"(?:luz|luces|lampara|lamparas)(?:\s+\w+){1,3}")
+_COURTESY_PREFIX = re.compile(r"^(?:por favor|porfa|oye|hey)\s+")
+
+
+def is_home_action(text: str) -> bool:
+    """¿Es una orden explícita? Recibe texto ya normalizado."""
+    text = _COURTESY_PREFIX.sub("", text)
+    return bool(
+        (_HOME_ACTION.match(text) and _HOME_TARGET.search(text))
+        or (_MUSIC_ACTION.match(text) and _MUSIC_TARGET.search(text))
+        or _CONTROL_EXACT.fullmatch(text)
+        or _HARDWARE_ACTION.match(text)
+        or _DOMAIN_EXACT.fullmatch(text)
+        or _PLAY_REQUEST.match(text)
+        or _STATUS_QUERY.match(text)
+        or _OBJECT_FIRST.fullmatch(text)
+        or is_system_status_request(text)
+    )
+
+
+def classify_query(text: str, available_plugins: List[str]) -> Dict[str, str]:
+    """Plugin elegido y su tipo, sin ejecutar nada ni tocar el contexto."""
+    plugin = route_query(text, available_plugins)
+    kind = "assistant" if plugin in ASSISTANT_PLUGINS else "action"
+    return {"plugin": plugin, "kind": kind}
 
 
 def is_scene_management_command(text: str) -> bool:
@@ -496,13 +574,19 @@ def route_query(text: str, available_plugins: List[str]) -> str:
 
     # "Relax" tambien es un preset musical. Una referencia explicita a una
     # luz convierte la frase en una solicitud de escena domotica.
-    if is_relax_light_request(text) and "domotica" in available_plugins:
+    if (is_relax_light_request(text) and "domotica" in available_plugins
+            and is_home_action(text)):
         return "domotica"
 
     # Reproduccion simple: prioriza el nodo de musica remoto. Solo cae en
     # music_local si el usuario pide explicitamente el celular/local o si el
     # plugin remoto no esta cargado.
-    if is_clear_music_request(text):
+    # Una escena es de luces aunque su nombre ("lectura", "relax") suene a música.
+    if (re.search(r"\bescenas?\b", text) and "domotica" in available_plugins
+            and is_home_action(text)):
+        return "domotica"
+
+    if is_clear_music_request(text) and is_home_action(text):
         if has_music_local_hint(text) and "music_local" in available_plugins:
             return "music_local"
         if has_music_remote_hint(text) and "music" in available_plugins:
@@ -599,6 +683,11 @@ def route_query(text: str, available_plugins: List[str]) -> str:
         if best_score <= 5:
             if "local_ia" in available_plugins:
                 return "local_ia"
+
+        # Palabras de la casa sin una orden explícita son conversación.
+        if (best_plugin not in ASSISTANT_PLUGINS and not is_home_action(text)
+                and "local_ia" in available_plugins):
+            return "local_ia"
 
         return best_plugin
 

@@ -35,7 +35,13 @@ from action_policy import (
 )
 from device_sessions import DeviceSessionStore
 from nova_event_bus import NovaEventBus
-from router import is_system_status_request, normalize_text, route_query, update_context
+from router import (
+    classify_query,
+    is_system_status_request,
+    normalize_text,
+    route_query,
+    update_context,
+)
 from flask import g, Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
 
@@ -1894,6 +1900,25 @@ def ask():
         "cerebro": "Core",
         "sugerencia": "Consulta disponible en: " + ", ".join(list(plugins.keys()))
     })
+
+@app.route("/api/v1/route", methods=["POST"])
+def api_route():
+    """Clasifica una consulta sin ejecutarla ni tocar el contexto.
+
+    Nova (Jinnex) la usa para decidir si el texto es una orden para PEARL o
+    una conversación: así el vocabulario de la casa vive sólo en router.py.
+    """
+    acceso = acceso_local_autorizado(request)
+    if acceso is not None:
+        return acceso
+    data, error = json_object_or_error(request)
+    if error is not None:
+        return error
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"status": "error", "error": "text_required"}), 400
+    return jsonify({"status": "ok", **classify_query(text, list(plugins.keys()))})
+
 
 @app.route("/ask_stream", methods=["POST"])
 def ask_stream():
