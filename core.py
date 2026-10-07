@@ -2538,4 +2538,9 @@ if __name__ == "__main__":
     print("\n🚀 JARVIS CORE iniciado")
     print(f"   🌐 http://localhost:{CORE_PORT}")
     print(f"   📦 Plugins activos: {len(plugins)}\n")
-    app.run(host=CORE_HOST, port=CORE_PORT, debug=CORE_DEBUG)
+    if CORE_DEBUG:
+        app.run(host=CORE_HOST, port=CORE_PORT, debug=True)
+    else:
+        from waitress import serve
+
+        serve(app, host=CORE_HOST, port=CORE_PORT, threads=8)

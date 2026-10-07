@@ -26,6 +26,11 @@ class ScenePromptGatewayTest(unittest.TestCase):
         session_patch = patch.object(core, "device_session_store", store)
         session_patch.start()
         self.addCleanup(session_patch.stop)
+        # Token fijo: las pruebas no dependen del .env real.
+        hub_token_patch = patch.object(core, "HUB_GATEWAY_TOKEN", "hub-test-token")
+        hub_token_patch.start()
+        self.addCleanup(hub_token_patch.stop)
+        self.hub_headers = {"X-PEARL-Core-Gateway": "hub-test-token"}
 
     def test_pending_prompts_are_proxied_to_hub(self):
         hub_response = Mock(status_code=200)
@@ -45,6 +50,7 @@ class ScenePromptGatewayTest(unittest.TestCase):
             json=None,
             params={"kind": "candidate_approval"},
             timeout=(3, core.HUB_API_TIMEOUT),
+            headers=self.hub_headers,
         )
 
     def test_decision_is_proxied_to_hub(self):
@@ -67,6 +73,7 @@ class ScenePromptGatewayTest(unittest.TestCase):
             json=decision,
             params=None,
             timeout=(3, core.HUB_API_TIMEOUT),
+            headers=self.hub_headers,
         )
 
     def test_device_session_requires_native_signature(self):
