@@ -14,6 +14,7 @@ DESCRIPTION = "Agente de musica remoto con memoria persistente para el nodo lapt
 
 LAPTOP_HOST = os.getenv("JARVIS_MUSIC_HOST", "jarvis-node.local")
 PORT = int(os.getenv("JARVIS_MUSIC_PORT", "5005"))
+TOKEN = os.getenv("JARVIS_MUSIC_TOKEN", "").strip()
 BASE_DIR = Path(__file__).resolve().parent
 CONNECT_TIMEOUT = float(os.getenv("JARVIS_MUSIC_CONNECT_TIMEOUT", "4"))
 STATUS_TIMEOUT = float(os.getenv("JARVIS_MUSIC_STATUS_TIMEOUT", "8"))
@@ -63,20 +64,27 @@ def has_any(text: str, words: List[str]) -> bool:
 
 
 class MusicNodeClient:
-    def __init__(self, host: str = LAPTOP_HOST, port: int = PORT):
+    def __init__(self, host: str = LAPTOP_HOST, port: int = PORT, token: str = TOKEN):
         self.host = host
         self.port = port
+        self.headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     def _url(self, endpoint: str) -> str:
         return f"http://{self.host}:{self.port}{endpoint}"
 
     def post(self, endpoint: str, payload=None, read_timeout: Optional[float] = None):
         timeout = (CONNECT_TIMEOUT, read_timeout or CONTROL_TIMEOUT)
-        res = requests.post(self._url(endpoint), json=payload or {}, timeout=timeout)
+        res = requests.post(
+            self._url(endpoint), json=payload or {}, headers=self.headers, timeout=timeout
+        )
         return res.json()
 
     def get(self, endpoint: str):
-        res = requests.get(self._url(endpoint), timeout=(CONNECT_TIMEOUT, STATUS_TIMEOUT))
+        res = requests.get(
+            self._url(endpoint),
+            headers=self.headers,
+            timeout=(CONNECT_TIMEOUT, STATUS_TIMEOUT),
+        )
         return res.json()
 
     def execute(self, action: str, query: Optional[str] = None) -> Dict:
