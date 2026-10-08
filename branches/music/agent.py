@@ -56,7 +56,8 @@ def normalize_text(text: str) -> str:
         if unicodedata.category(char) != "Mn"
     )
     text = re.sub(r"[^\w\s%]", " ", text)
-    return " ".join(text.split())
+    # "lo-fi" (como lo escribe la transcripción) es el preset "lofi".
+    return re.sub(r"\blo fi\b", "lofi", " ".join(text.split()))
 
 
 def has_any(text: str, words: List[str]) -> bool:

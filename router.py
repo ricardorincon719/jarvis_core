@@ -263,6 +263,8 @@ def normalize_text(text: str) -> str:
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = re.sub(r"[^\w\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
+    # "lo-fi" (como lo escribe la transcripción) es el mismo género que "lofi".
+    text = re.sub(r"\blo fi\b", "lofi", text)
     return text
 
 
