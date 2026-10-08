@@ -178,7 +178,8 @@ HUB_URL = os.getenv("JARVIS_ORCHESTRATOR_URL", "http://jarvis-node.local:5006").
 HUB_API_TIMEOUT = env_float("PEARL_HUB_API_TIMEOUT", "8")
 HUB_GATEWAY_TOKEN = os.getenv("PEARL_CORE_GATEWAY_TOKEN", "").strip()
 DEVICE_SIGNATURE_MAX_SKEW_SECONDS = int(os.getenv("PEARL_DEVICE_SIGNATURE_MAX_SKEW_SECONDS", "300"))
-ACTION_PROPOSAL_TTL_SECONDS = int(os.getenv("PEARL_ACTION_PROPOSAL_TTL_SECONDS", "180"))
+# Un minuto para decir "confirmado" o "cancela" (pedido del usuario, 2026-10-08).
+ACTION_PROPOSAL_TTL_SECONDS = int(os.getenv("PEARL_ACTION_PROPOSAL_TTL_SECONDS", "60"))
 ACTION_PROPOSALS_FILE = Path(os.getenv(
     "PEARL_ACTION_PROPOSALS_FILE",
     str(Path.home() / ".local/share/pearl-home/action_proposals.json"),
@@ -235,6 +236,8 @@ ACTION_CANCEL_PHRASES = {
     "no gracias",
     "dejalo",
     "olvidalo",
+    "cancela esa orden",
+    "cancela cancela esa orden",
 }
 
 COMPOUND_CONNECTOR_RE = re.compile(

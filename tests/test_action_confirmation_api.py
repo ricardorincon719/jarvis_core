@@ -121,8 +121,12 @@ class ActionConfirmationApiTest(unittest.TestCase):
     def test_confirmado_and_its_cancel_variants(self):
         for phrase in ("Confirmado.", "confirmada", "Sí, confirmado", "Aprobado", "apruebo"):
             self.assertEqual(core.natural_action_decision(phrase), "accept")
-        for phrase in ("cancelado", "mejor no", "déjalo", "olvídalo"):
+        for phrase in ("cancelado", "mejor no", "déjalo", "olvídalo",
+                       "Cancela esa orden", "cancela, cancela esa orden"):
             self.assertEqual(core.natural_action_decision(phrase), "cancel")
+
+    def test_proposals_wait_one_minute_by_default(self):
+        self.assertEqual(core.ACTION_PROPOSAL_TTL_SECONDS, 60)
 
     def test_voice_confirmation_is_routed_as_action_only_with_pending_proposal(self):
         """Nova pregunta a /api/v1/route y sólo envía a /ask lo que es acción."""

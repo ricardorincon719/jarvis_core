@@ -198,7 +198,7 @@ La plantilla completa está en [.env.example](.env.example). Variables principal
 | `PEARL_NOVA_SESSION_ID` | Sesión conversacional durable de la consola | `pearl:console:user:ricardo` |
 | `PEARL_NOVA_EVENT_DB` | Outbox SQLite de eventos para Nova | `~/.local/share/pearl-home/nova_event_bus.db` |
 | `PEARL_HUB_API_TIMEOUT` | Timeout hacia el Hub | `8` segundos |
-| `PEARL_ACTION_PROPOSAL_TTL_SECONDS` | Vida de una propuesta | `180` segundos |
+| `PEARL_ACTION_PROPOSAL_TTL_SECONDS` | Vida de una propuesta | `60` segundos |
 | `PEARL_DEVICE_SESSIONS_FILE` | Sesiones persistentes | `~/.local/share/pearl-home/device_sessions.json` |
 | `PEARL_ACTION_PROPOSALS_FILE` | Propuestas persistentes | `~/.local/share/pearl-home/action_proposals.json` |
 | `JARVIS_SCENE_MEMORY_MIN_REPETITIONS` | Repeticiones para candidato | `2` |
@@ -314,7 +314,7 @@ El cuerpo de una decisión es:
 Se acepta `accept` o `cancel`. Las frases naturales también se resuelven cuando existe una propuesta para el mismo dispositivo:
 
 - Aceptan: `sí`, `confirmo`, `confirmar`, `confirmado`, `sí, hazlo`, `sí, confirmado`…
-- Cancelan: `no`, `cancelar`, `cancelado`, `rechazar`, `mejor no`, `no gracias`, `déjalo`, `olvídalo`…
+- Cancelan: `no`, `cancelar`, `cancelado`, `rechazar`, `mejor no`, `no gracias`, `déjalo`, `olvídalo`, `cancela esa orden`…
 - `ok`, `dale` y `adelante` **no** confirman, a propósito.
 
 Así se puede confirmar por voz: si el dispositivo tiene una propuesta esperando, `/api/v1/route` clasifica «confirmado» como acción y Nova lo reenvía a `/ask`; si no, sigue siendo conversación.
