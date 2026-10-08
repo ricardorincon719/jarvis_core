@@ -215,6 +215,9 @@ ACTION_ACCEPT_PHRASES = {
     "confirmado",
     "confirmada",
     "si confirmado",
+    "aprobado",
+    "aprobada",
+    "apruebo",
 }
 ACTION_CANCEL_PHRASES = {
     "no",

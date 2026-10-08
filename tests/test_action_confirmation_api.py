@@ -119,7 +119,7 @@ class ActionConfirmationApiTest(unittest.TestCase):
             self.assertIsNone(core.natural_action_decision(phrase))
 
     def test_confirmado_and_its_cancel_variants(self):
-        for phrase in ("Confirmado.", "confirmada", "Sí, confirmado"):
+        for phrase in ("Confirmado.", "confirmada", "Sí, confirmado", "Aprobado", "apruebo"):
             self.assertEqual(core.natural_action_decision(phrase), "accept")
         for phrase in ("cancelado", "mejor no", "déjalo", "olvídalo"):
             self.assertEqual(core.natural_action_decision(phrase), "cancel")
