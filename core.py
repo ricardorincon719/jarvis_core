@@ -40,11 +40,28 @@ from brain_notify import approval_decided, approval_waiting, pulse_route
 from nova_event_bus import NovaEventBus
 from router import (
     classify_query,
+    is_sleep_command,
+    is_wake_command,
     is_system_status_request,
     normalize_text,
     route_query,
     update_context,
 )
+import urllib.request as _urlreq
+
+AUTOMACION_URL = os.getenv("AUTOMACION_URL", "http://127.0.0.1:5014")
+
+
+def _automacion_scene(name: str) -> bool:
+    """Llama al motor de automación (determinista, local). No bloquea el flujo."""
+    try:
+        body = json.dumps({"name": name}).encode()
+        req = _urlreq.Request(AUTOMACION_URL + "/scene", data=body,
+                              headers={"Content-Type": "application/json"}, method="POST")
+        with _urlreq.urlopen(req, timeout=3) as r:
+            return json.load(r).get("ok", False)
+    except Exception:
+        return False
 from flask import g, Flask, Response, render_template, request, jsonify, stream_with_context
 from flask_cors import CORS
 
@@ -805,6 +822,20 @@ def build_compound_dispatch(prompt: str, available_plugins):
 
 
 def execute_plugin(plugin_name: str, prompt: str):
+    # Comando determinista "dormir"/"despertar": lo resuelve el motor de automación
+    # (apaga/reanuda TODAS las luces, sin LLM). No calla a Jarvis: solo las luces.
+    if is_sleep_command(prompt):
+        ok = _automacion_scene("dormir")
+        update_context("domotica", prompt)
+        return {"respuesta": "Buenas noches, señor. Apago las luces." if ok
+                else "Quise apagar las luces pero no respondió la automación.",
+                "cerebro": "accion", "plugin": "domotica", "action_level": LEVEL_SAFE}
+    if is_wake_command(prompt):
+        ok = _automacion_scene("despertar")
+        update_context("domotica", prompt)
+        return {"respuesta": "Buen día, señor." if ok else "No pude reanudar la automación.",
+                "cerebro": "accion", "plugin": "domotica", "action_level": LEVEL_SAFE}
+
     plugin_info = plugins[plugin_name]
     module = plugin_info["module"]
 

@@ -349,12 +349,30 @@ _STATUS_QUERY = re.compile(
 _OBJECT_FIRST = re.compile(r"(?:luz|luces|lampara|lamparas)(?:\s+\w+){1,3}")
 _COURTESY_PREFIX = re.compile(r"^(?:por favor|porfa|oye|hey)\s+")
 
+# Comando determinista "dormir" (apaga las luces y pausa la auto-luz) y "despertar".
+_SLEEP = re.compile(
+    r"\b(?:buenas noches|me voy a dormir|voy a dormir|a dormir|hora de dormir|"
+    r"me acuesto|me voy a acostar|modo dormir|escena dormir)\b"
+)
+_WAKE = re.compile(
+    r"\b(?:buenos dias|buen dia|ya me levante|me levanto|despierta|despertar|modo despertar)\b"
+)
+
+
+def is_sleep_command(text: str) -> bool:
+    return bool(_SLEEP.search(normalize_text(text)))
+
+
+def is_wake_command(text: str) -> bool:
+    return bool(_WAKE.search(normalize_text(text)))
+
 
 def is_home_action(text: str) -> bool:
     """¿Es una orden explícita? Recibe texto ya normalizado."""
     text = _COURTESY_PREFIX.sub("", text)
     return bool(
-        (_HOME_ACTION.match(text) and _HOME_TARGET.search(text))
+        is_sleep_command(text) or is_wake_command(text)
+        or (_HOME_ACTION.match(text) and _HOME_TARGET.search(text))
         or (_MUSIC_ACTION.match(text) and _MUSIC_TARGET.search(text))
         or _CONTROL_EXACT.fullmatch(text)
         or _HARDWARE_ACTION.match(text)
@@ -553,6 +571,11 @@ def route_query(text: str, available_plugins: List[str]) -> str:
         return "core_health"
 
     if is_scene_management_command(text) and "domotica" in available_plugins:
+        return "domotica"
+
+    # Comando determinista dormir/despertar -> domótica (lo ejecuta Core llamando
+    # al motor de automación; apaga/reanuda sin pasar por el LLM).
+    if (is_sleep_command(text) or is_wake_command(text)) and "domotica" in available_plugins:
         return "domotica"
 
     # -------------------------
